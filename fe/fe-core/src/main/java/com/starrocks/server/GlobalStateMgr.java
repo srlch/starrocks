@@ -2053,6 +2053,11 @@ public class GlobalStateMgr {
                     .append("\" = \"");
             sb.append(olapTable.enablePersistentIndex()).append("\"");
 
+            // compression type
+            sb.append(StatsConstants.TABLE_PROPERTY_SEPARATOR).append(PropertyAnalyzer.PROPERTIES_COMPRESSION)
+                    .append("\" = \"");
+            sb.append(olapTable.getCompressionType()).append("\"");
+
             // storage media
             Map<String, String> properties = olapTable.getTableProperty().getProperties();
             if (!properties.containsKey(PropertyAnalyzer.PROPERTIES_STORAGE_MEDIUM)) {

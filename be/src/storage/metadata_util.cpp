@@ -199,7 +199,7 @@ static Status t_column_to_pb_column(int32_t unique_id, const TColumn& t_column, 
 
 Status convert_t_schema_to_pb_schema(const TTabletSchema& tablet_schema, uint32_t next_unique_id,
                                      const std::unordered_map<uint32_t, uint32_t>& col_ordinal_to_unique_id,
-                                     TabletSchemaPB* schema) {
+                                     TabletSchemaPB* schema, TCompressionType::type compression_type) {
     if (tablet_schema.__isset.id) {
         schema->set_id(tablet_schema.id);
     }
@@ -222,6 +222,27 @@ Status convert_t_schema_to_pb_schema(const TTabletSchema& tablet_schema, uint32_
         CHECK(false) << "unsupported keys type " << tablet_schema.keys_type;
     }
     schema->set_compress_kind(COMPRESS_LZ4);
+
+    switch (compression_type) {
+    case TCompressionType::LZ4_FRAME:
+        schema->set_compression_type(LZ4_FRAME);
+        break;
+    case TCompressionType::LZ4:
+        schema->set_compression_type(LZ4_FRAME);
+        break;
+    case TCompressionType::SNAPPY:
+        schema->set_compression_type(SNAPPY);
+        break;
+    case TCompressionType::ZLIB:
+        schema->set_compression_type(ZLIB);
+        break;
+    case TCompressionType::ZSTD:
+        schema->set_compression_type(ZSTD);
+        break;
+    default:
+        schema->set_compression_type(LZ4_FRAME);
+        break;
+    }
 
     FieldTypeVersion field_version = FieldTypeVersion::kV1;
     if (config::storage_format_version == 2) {

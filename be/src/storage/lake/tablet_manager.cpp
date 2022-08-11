@@ -165,7 +165,7 @@ Status TabletManager::create_tablet(const TCreateTabletReq& req) {
         col_idx_to_unique_id[col_idx] = col_idx;
     }
     RETURN_IF_ERROR(starrocks::convert_t_schema_to_pb_schema(req.tablet_schema, next_unique_id, col_idx_to_unique_id,
-                                                             tablet_metadata_pb.mutable_schema()));
+                                                             tablet_metadata_pb.mutable_schema(), req.compression_type));
 
     return put_tablet_metadata(tablet_metadata_pb);
 }
