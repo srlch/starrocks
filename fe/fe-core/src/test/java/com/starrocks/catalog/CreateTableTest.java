@@ -126,6 +126,31 @@ public class CreateTableTest {
                         +
                         "distributed by hash(key1) buckets 1 properties('replication_num' = '1', 'storage_medium' = 'ssd');"));
 
+        ExceptionChecker
+                 .expectThrowsNoException(() -> createTable("create table test.tb8(key1 int, key2 varchar(10)) \n"
+                        + "distributed by hash(key1) buckets 1 \n"
+                        + "properties('replication_num' = '1', 'compression' = 'lz4f');"));
+
+         ExceptionChecker
+                 .expectThrowsNoException(() -> createTable("create table test.tb9(key1 int, key2 varchar(10)) \n"
+                        + "distributed by hash(key1) buckets 1 \n"
+                        + "properties('replication_num' = '1', 'compression' = 'lz4');"));
+
+         ExceptionChecker
+                 .expectThrowsNoException(() -> createTable("create table test.tb10(key1 int, key2 varchar(10)) \n"
+                        + "distributed by hash(key1) buckets 1 \n"
+                        + "properties('replication_num' = '1', 'compression' = 'zstd');"));
+
+         ExceptionChecker
+                 .expectThrowsNoException(() -> createTable("create table test.tb11(key1 int, key2 varchar(10)) \n"
+                        + "distributed by hash(key1) buckets 1 \n"
+                        + "properties('replication_num' = '1', 'compression' = 'zlib');"));
+
+         ExceptionChecker
+                 .expectThrowsNoException(() -> createTable("create table test.tb12(key1 int, key2 varchar(10)) \n"
+                        + "distributed by hash(key1) buckets 1 \n"
+                        + "properties('replication_num' = '1', 'compression' = 'snappy');"));
+
         Database db = GlobalStateMgr.getCurrentState().getDb("test");
         OlapTable tbl6 = (OlapTable) db.getTable("tbl6");
         Assert.assertTrue(tbl6.getColumn("k1").isKey());
@@ -187,6 +212,12 @@ public class CreateTableTest {
                         () -> createTable(
                                 "create table test.tb7(key1 int, key2 varchar(10)) distributed by hash(key1) \n"
                                         + "buckets 1 properties('replication_num' = '1', 'storage_medium' = 'ssd');"));
+
+        ExceptionChecker
+                .expectThrowsWithMsg(DdlException.class, "unknown compression type: xxx",
+                        () -> createTable("create table test.atbl8\n" + "(key1 int, key2 varchar(10))\n"
+                                + "distributed by hash(key1) buckets 1\n"
+                                + "properties('replication_num' = '1', 'compression' = 'xxx');"));
     }
 
     @Test
