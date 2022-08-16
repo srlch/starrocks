@@ -446,8 +446,6 @@ public class PropertyAnalyzer {
             return TCompressionType.LZ4_FRAME;
         } else if (compressionType.equalsIgnoreCase("zstd")) {
             return TCompressionType.ZSTD;
-        } else if (compressionType.equalsIgnoreCase("snappy")) {
-            return TCompressionType.SNAPPY;
         } else if (compressionType.equalsIgnoreCase("zlib")) {
             return TCompressionType.ZLIB;
         } else {

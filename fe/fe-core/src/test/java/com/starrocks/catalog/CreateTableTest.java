@@ -146,11 +146,6 @@ public class CreateTableTest {
                         + "distributed by hash(key1) buckets 1 \n"
                         + "properties('replication_num' = '1', 'compression' = 'zlib');"));
 
-         ExceptionChecker
-                 .expectThrowsNoException(() -> createTable("create table test.tb12(key1 int, key2 varchar(10)) \n"
-                        + "distributed by hash(key1) buckets 1 \n"
-                        + "properties('replication_num' = '1', 'compression' = 'snappy');"));
-
         Database db = GlobalStateMgr.getCurrentState().getDb("test");
         OlapTable tbl6 = (OlapTable) db.getTable("tbl6");
         Assert.assertTrue(tbl6.getColumn("k1").isKey());

@@ -230,9 +230,6 @@ Status convert_t_schema_to_pb_schema(const TTabletSchema& tablet_schema, uint32_
     case TCompressionType::LZ4:
         schema->set_compression_type(LZ4_FRAME);
         break;
-    case TCompressionType::SNAPPY:
-        schema->set_compression_type(SNAPPY);
-        break;
     case TCompressionType::ZLIB:
         schema->set_compression_type(ZLIB);
         break;
