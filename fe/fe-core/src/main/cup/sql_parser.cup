@@ -345,7 +345,7 @@ nonterminal AnalyticWindow opt_window_clause;
 nonterminal AnalyticWindow.Type window_type;
 nonterminal AnalyticWindow.Boundary window_boundary;
 nonterminal SlotRef column_ref;
-nonterminal ArrayList<TableRef> base_table_ref_list;
+nonterminal ArrayList<TableRef> base_table_ref_list, opt_base_table_ref_list;
 nonterminal TableRef base_table_ref;
 nonterminal Subquery subquery;
 nonterminal Expr sign_chain_expr;
@@ -1614,7 +1614,7 @@ delete_stmt ::=
 restore_stmt ::=
     KW_RESTORE KW_SNAPSHOT job_label:label
     KW_FROM ident:repoName
-	KW_ON LPAREN base_table_ref_list:tbls RPAREN
+    opt_base_table_ref_list:tbls
     opt_properties:properties
     {:
         RESULT = new RestoreStmt(label, repoName, tbls, properties);
@@ -1886,18 +1886,34 @@ type_function_name ::=
     ;
 
 base_table_ref_list ::=
-  base_table_ref:tbl
-  {:
+    base_table_ref:tbl
+    {:
     ArrayList<TableRef> list = new ArrayList<TableRef>();
     list.add(tbl);
     RESULT = list;
-  :}
-  | base_table_ref_list:list COMMA base_table_ref:tbl
-  {:
+    :}
+    | base_table_ref_list:list COMMA base_table_ref:tbl
+    {:
     list.add(tbl);
     RESULT = list;
-  :}
-  ;
+    :}
+    ;
+
+opt_base_table_ref_list ::=
+    {:
+    RESULT = null;
+    :}
+    | KW_ON LPAREN base_table_ref:tbl RPAREN
+    {:
+    ArrayList<TableRef> list = new ArrayList<TableRef>();
+    list.add(tbl);
+    RESULT = list;
+    :}
+    | KW_ON LPAREN base_table_ref_list:list RPAREN
+    {:
+    RESULT = list;
+    :}
+    ;
 
 base_table_ref ::=
     table_name:name opt_partition_names:partitionNames opt_tablet_list:tabletIds opt_table_alias:alias opt_common_hints:commonHints

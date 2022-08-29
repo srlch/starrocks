@@ -399,7 +399,9 @@ public class BackupHandler extends LeaderDaemon implements Writable {
         // Also remove all unrelated objs
         Preconditions.checkState(infos.size() == 1);
         BackupJobInfo jobInfo = infos.get(0);
-        checkAndFilterRestoreObjsExistInSnapshot(jobInfo, stmt.getTableRefs());
+        if (stmt.getTableRefs().size() != 0) {
+            checkAndFilterRestoreObjsExistInSnapshot(jobInfo, stmt.getTableRefs());
+        }
 
         // Create a restore job
         RestoreJob restoreJob = new RestoreJob(stmt.getLabel(), stmt.getBackupTimestamp(),
