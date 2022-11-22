@@ -144,17 +144,23 @@ protected:
 TEST_F(AsyncDeltaWriterTest, test_open) {
     // Invalid tablet id
     {
-        auto tablet_id = -1;
-        auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                     _mem_tracker.get());
+        LakeDeltaWriterOptions option;
+        option.tablet_id = -1;
+        option.txn_id = _txn_id;
+        option.partition_id = _partition_id;
+        option.slots = nullptr;
+        auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         delta_writer->close();
     }
     // Call open() multiple times
     {
-        auto tablet_id = _tablet_metadata->id();
-        auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                     _mem_tracker.get());
+        LakeDeltaWriterOptions option;
+        option.tablet_id = _tablet_metadata->id();
+        option.txn_id = _txn_id;
+        option.partition_id = _partition_id;
+        option.slots = nullptr;
+        auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->open());
@@ -162,9 +168,12 @@ TEST_F(AsyncDeltaWriterTest, test_open) {
     }
     // Call open() concurrently
     {
-        auto tablet_id = _tablet_metadata->id();
-        auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                     _mem_tracker.get());
+        LakeDeltaWriterOptions option;
+        option.tablet_id = _tablet_metadata->id();
+        option.txn_id = _txn_id;
+        option.partition_id = _partition_id;
+        option.slots = nullptr;
+        auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         auto t1 = std::thread([&]() {
             for (int i = 0; i < 10000; i++) {
                 ASSERT_OK(delta_writer->open());
@@ -191,9 +200,12 @@ TEST_F(AsyncDeltaWriterTest, test_write) {
     }
 
     // Create and open DeltaWriter
-    auto tablet_id = _tablet_metadata->id();
-    auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                 _mem_tracker.get());
+    LakeDeltaWriterOptions option;
+    option.tablet_id = _tablet_metadata->id();
+    option.txn_id = _txn_id;
+    option.partition_id = _partition_id;
+    option.slots = nullptr;
+    auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
     ASSERT_OK(delta_writer->open());
     // Call open() again
     ASSERT_OK(delta_writer->open());
@@ -268,9 +280,12 @@ TEST_F(AsyncDeltaWriterTest, test_write_concurrently) {
     }
 
     // Create and open DeltaWriter
-    auto tablet_id = _tablet_metadata->id();
-    auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                 _mem_tracker.get());
+    LakeDeltaWriterOptions option;
+    option.tablet_id = _tablet_metadata->id();
+    option.txn_id = _txn_id;
+    option.partition_id = _partition_id;
+    option.slots = nullptr;
+    auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
 
     ASSERT_OK(delta_writer->open());
 
@@ -363,9 +378,12 @@ TEST_F(AsyncDeltaWriterTest, test_write_after_close) {
     }
 
     // Create and open DeltaWriter
-    auto tablet_id = _tablet_metadata->id();
-    auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                 _mem_tracker.get());
+    LakeDeltaWriterOptions option;
+    option.tablet_id = _tablet_metadata->id();
+    option.txn_id = _txn_id;
+    option.partition_id = _partition_id;
+    option.slots = nullptr;
+    auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
     ASSERT_OK(delta_writer->open());
 
     // close()
@@ -392,9 +410,12 @@ TEST_F(AsyncDeltaWriterTest, test_write_after_close) {
 
 TEST_F(AsyncDeltaWriterTest, test_finish_after_close) {
     // Create and open DeltaWriter
-    auto tablet_id = _tablet_metadata->id();
-    auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                 _mem_tracker.get());
+    LakeDeltaWriterOptions option;
+    option.tablet_id = _tablet_metadata->id();
+    option.txn_id = _txn_id;
+    option.partition_id = _partition_id;
+    option.slots = nullptr;
+    auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
     ASSERT_OK(delta_writer->open());
 
     // close()
@@ -411,9 +432,12 @@ TEST_F(AsyncDeltaWriterTest, test_finish_after_close) {
 TEST_F(AsyncDeltaWriterTest, test_close) {
     // Call close() multiple times
     {
-        auto tablet_id = _tablet_metadata->id();
-        auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                     _mem_tracker.get());
+        LakeDeltaWriterOptions option;
+        option.tablet_id = _tablet_metadata->id();
+        option.txn_id = _txn_id;
+        option.partition_id = _partition_id;
+        option.slots = nullptr;
+        auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
 
         delta_writer->close();
@@ -421,9 +445,12 @@ TEST_F(AsyncDeltaWriterTest, test_close) {
     }
     // Call close() concurrently
     {
-        auto tablet_id = _tablet_metadata->id();
-        auto delta_writer = AsyncDeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                     _mem_tracker.get());
+        LakeDeltaWriterOptions option;
+        option.tablet_id = _tablet_metadata->id();
+        option.txn_id = _txn_id;
+        option.partition_id = _partition_id;
+        option.slots = nullptr;
+        auto delta_writer = AsyncDeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         auto t1 = std::thread([&]() {
             for (int i = 0; i < 10000; i++) {

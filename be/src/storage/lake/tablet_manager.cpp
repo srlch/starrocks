@@ -630,6 +630,7 @@ Status apply_pk_txn_log(const TxnLog& log, const TabletMetadata& metadata, Table
     if (log.has_op_compaction()) {
         RETURN_IF_ERROR(apply_pk_compaction_log(log.op_compaction(), metadata, tablet, builder, base_version));
     }
+
     return Status::OK();
 }
 
