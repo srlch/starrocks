@@ -350,6 +350,8 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.StringWriter;
 import java.math.BigDecimal;
@@ -367,6 +369,7 @@ import java.util.stream.Collectors;
 import static java.util.stream.Collectors.toList;
 
 public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
+    private static final Logger LOG = LogManager.getLogger(AstBuilder.class);
     private final long sqlMode;
 
     public AstBuilder(long sqlMode) {
@@ -958,10 +961,18 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
             comment = ((StringLiteral) visit(context.comment())).getStringValue();
         }
 
-        IndexDef indexDef = new IndexDef(indexName,
+        IndexDef indexDef;
+        if (context.indexType().FULLTEXT() != null) {
+            indexDef = new IndexDef(indexName,
+                columnList.stream().map(Identifier::getValue).collect(toList()),
+                IndexDef.IndexType.FULLTEXT,
+                comment);
+        } else {
+            indexDef = new IndexDef(indexName,
                 columnList.stream().map(Identifier::getValue).collect(toList()),
                 IndexDef.IndexType.BITMAP,
                 comment);
+        }
 
         CreateIndexClause createIndexClause = new CreateIndexClause(null, indexDef, false);
 
@@ -4235,13 +4246,22 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
         if (context.REGEXP() != null || context.RLIKE() != null) {
             likePredicate = new LikePredicate(LikePredicate.Operator.REGEXP,
                     (Expr) visit(context.value),
-                    (Expr) visit(context.pattern));
-        } else {
+                    (Expr) visit(context.pattern), false);
+        } else if (context.AGAINST() == null) {
             likePredicate = new LikePredicate(
                     LikePredicate.Operator.LIKE,
                     (Expr) visit(context.value),
-                    (Expr) visit(context.pattern));
+                    (Expr) visit(context.pattern), false);
+        } else {
+            Expr expr = (Expr) visit(context.pattern);
+            String s = "%" + ((StringLiteral) expr).getValue() + "%";
+            ((StringLiteral) expr).setValue(s);
+            likePredicate = new LikePredicate(
+                    LikePredicate.Operator.LIKE,
+                    (Expr) visit(context.value),
+                    (Expr) expr, true);
         }
+
         if (context.NOT() != null) {
             return new CompoundPredicate(CompoundPredicate.Operator.NOT, likePredicate, null);
         } else {
@@ -4513,6 +4533,11 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
     @Override
     public ParseNode visitCast(StarRocksParser.CastContext context) {
         return new CastExpr(new TypeDef(getType(context.type())), (Expr) visit(context.expression()));
+    }
+
+    @Override
+    public ParseNode visitMatch(StarRocksParser.MatchContext context) {
+        return visitColumnReference(context.columnReference());
     }
 
     @Override
