@@ -85,6 +85,8 @@ import com.starrocks.thrift.FrontendService;
 import com.starrocks.thrift.FrontendServiceVersion;
 import com.starrocks.thrift.TAbortRemoteTxnRequest;
 import com.starrocks.thrift.TAbortRemoteTxnResponse;
+import com.starrocks.thrift.TAllocateAutoIncrementIdParam;
+import com.starrocks.thrift.TAllocateAutoIncrementIdResult;
 import com.starrocks.thrift.TAuthenticateParams;
 import com.starrocks.thrift.TBatchReportExecStatusParams;
 import com.starrocks.thrift.TBatchReportExecStatusResult;
@@ -164,6 +166,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.thrift.TException;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -1397,6 +1400,23 @@ public class FrontendServiceImpl implements FrontendService.Iface {
             status.setError_msgs(Lists.newArrayList(e.getMessage()));
             return new TSetConfigResponse(status);
         }
+    }
+
+    public TAllocateAutoIncrementIdResult allocAutoIncrementId(TAllocateAutoIncrementIdParam request) throws TException {
+        TAllocateAutoIncrementIdResult result = new TAllocateAutoIncrementIdResult();
+        Long nextId = GlobalStateMgr.getCurrentState().allocateAutoIncrementId(request.table_id, request.rows);
+        try {
+            GlobalStateMgr.getCurrentState().saveAutoIncrementImage();
+        } catch (IOException e) {
+            result.setAuto_increment_id(-1);
+            result.setAllocated_rows(0);
+            return result;
+        }
+
+        result.setAuto_increment_id(nextId);
+        result.setAllocated_rows(request.rows);
+
+        return result;
     }
 
     @Override

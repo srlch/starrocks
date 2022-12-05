@@ -193,7 +193,7 @@ public class LoadingTaskPlanner {
         TWriteQuorumType writeQuorum = table.writeQuorum();
 
         List<Long> partitionIds = getAllPartitionIds();
-        OlapTableSink olapTableSink = new OlapTableSink(table, tupleDesc, partitionIds, true, writeQuorum);
+        OlapTableSink olapTableSink = new OlapTableSink(table, tupleDesc, partitionIds, true, writeQuorum, false);
         olapTableSink.init(loadId, txnId, dbId, timeoutS);
         olapTableSink.complete();
 
@@ -269,7 +269,7 @@ public class LoadingTaskPlanner {
 
         List<Long> partitionIds = getAllPartitionIds();
 
-        OlapTableSink olapTableSink = new OlapTableSink(table, tupleDesc, partitionIds, true, writeQuorum);
+        OlapTableSink olapTableSink = new OlapTableSink(table, tupleDesc, partitionIds, true, writeQuorum, false);
         olapTableSink.init(loadId, txnId, dbId, timeoutS);
         olapTableSink.complete();
 

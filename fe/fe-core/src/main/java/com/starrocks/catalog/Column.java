@@ -79,6 +79,8 @@ public class Column implements Writable {
     private boolean isKey;
     @SerializedName(value = "isAllowNull")
     private boolean isAllowNull;
+    @SerializedName(value = "isAutoIncrement")
+    private boolean isAutoIncrement;
     @SerializedName(value = "defaultValue")
     private String defaultValue;
     // this handle function like now() or simple expression
@@ -151,6 +153,7 @@ public class Column implements Writable {
                 this.defaultExpr = new DefaultExpr(defaultValueDef.expr.toSql());
             }
         }
+        this.isAutoIncrement = false;
         this.comment = comment;
         this.stats = new ColumnStats();
     }
@@ -255,8 +258,16 @@ public class Column implements Writable {
         return isAllowNull;
     }
 
+    public boolean isAutoIncrement() {
+        return isAutoIncrement;
+    }
+
     public void setIsAllowNull(boolean isAllowNull) {
         this.isAllowNull = isAllowNull;
+    }
+
+    public void setIsAutoIncrement(boolean isAutoIncrement) {
+        this.isAutoIncrement = isAutoIncrement;
     }
 
     public DefaultExpr getDefaultExpr() {
@@ -306,6 +317,7 @@ public class Column implements Writable {
         }
         tColumn.setIs_key(this.isKey);
         tColumn.setIs_allow_null(this.isAllowNull);
+        tColumn.setIs_auto_increment(this.isAutoIncrement);
         tColumn.setDefault_value(this.defaultValue);
         // The define expr does not need to be serialized here for now.
         // At present, only serialized(analyzed) define expr is directly used when creating a materialized view.
@@ -434,7 +446,9 @@ public class Column implements Writable {
         } else {
             sb.append("NOT NULL ");
         }
-        if (defaultExpr != null) {
+        if (defaultExpr == null && isAutoIncrement) {
+            sb.append("AUTO_INCREMENT ");
+        } else if (defaultExpr != null) {
             if ("now()".equalsIgnoreCase(defaultExpr.getExpr())) {
                 // compatible with mysql
                 sb.append("DEFAULT ").append("CURRENT_TIMESTAMP").append(" ");
@@ -531,6 +545,9 @@ public class Column implements Writable {
             sb.append("NULL ");
         } else {
             sb.append("NOT NULL ");
+        }
+        if (isAutoIncrement) {
+            sb.append("AUTO_INCREMENT ");
         }
         if (defaultValue != null && getPrimitiveType() != PrimitiveType.HLL &&
                 getPrimitiveType() != PrimitiveType.BITMAP) {

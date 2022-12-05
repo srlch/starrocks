@@ -32,12 +32,16 @@
 #include <random>
 #include <set>
 
+#include "agent/master_info.h"
 #include "common/status.h"
 #include "cumulative_compaction.h"
 #include "fs/fd_cache.h"
 #include "fs/fs_util.h"
+#include "gen_cpp/FrontendService.h"
+#include "gen_cpp/FrontendService_types.h"
 #include "runtime/current_thread.h"
 #include "runtime/exec_env.h"
+#include "runtime/client_cache.h"
 #include "storage/base_compaction.h"
 #include "storage/compaction_manager.h"
 #include "storage/data_dir.h"
@@ -59,6 +63,7 @@
 #include "util/thread.h"
 #include "util/time.h"
 #include "util/trace.h"
+#include "util/thrift_rpc_helper.h"
 
 namespace starrocks {
 
@@ -90,7 +95,9 @@ StorageEngine::StorageEngine(const EngineOptions& options)
           _rowset_id_generator(new UniqueRowsetIdGenerator(options.backend_uid)),
           _memtable_flush_executor(nullptr),
           _update_manager(new UpdateManager(options.update_mem_tracker)),
-          _compaction_manager(new CompactionManager()) {
+          _compaction_manager(new CompactionManager()),
+          _tables_auto_increment_shards_mask(config::table_auto_increment_shard_size - 1),
+          _tables_auto_increment_mutex_shards(new std::vector<std::mutex>(config::table_auto_increment_shard_size)) {
 #ifdef BE_TEST
     _p_instance = _s_instance;
     _s_instance = this;
@@ -947,6 +954,14 @@ Status StorageEngine::_do_sweep(const std::string& scan_root, const time_t& loca
     return res;
 }
 
+Status StorageEngine::_get_remote_next_increment_id_interval(const TAllocateAutoIncrementIdParam& request,
+                                                             TAllocateAutoIncrementIdResult* result) {
+    TNetworkAddress master_addr = get_master_address();
+    return ThriftRpcHelper::rpc<FrontendServiceClient>(
+            master_addr.hostname, master_addr.port,
+            [&request, &result](FrontendServiceConnection& client) { client->allocAutoIncrementId(*result, request); });
+}
+
 double StorageEngine::delete_unused_rowset() {
     MonotonicStopWatch timer;
     timer.start();
@@ -1096,6 +1111,92 @@ bool StorageEngine::check_rowset_id_in_unused_rowsets(const RowsetId& rowset_id)
     std::lock_guard lock(_gc_mutex);
     auto search = _unused_rowsets.find(rowset_id.to_string());
     return search != _unused_rowsets.end();
+}
+
+void StorageEngine::remove_increment_map_by_table_id(int64_t table_id) {
+    {
+        // LIKELY, lock shared mode.
+        std::shared_lock l(_auto_increment_mutex);
+        auto iter = _tableid_auto_increment_map.find(table_id);
+        if (iter == _tableid_auto_increment_map.end()) {
+            return;
+        }
+    }
+
+    // UNLIKELY, lock mode.
+    std::unique_lock l(_auto_increment_mutex);
+    if (_tableid_auto_increment_map.find(table_id) == _tableid_auto_increment_map.end()) {
+        return;
+    }
+    delete _tableid_auto_increment_map[table_id];
+    _tableid_auto_increment_map.erase(_tableid_auto_increment_map.find(table_id));
+}
+
+void StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num_row,
+                                                   std::vector<int64_t> &ids) {
+    bool need_init = false;
+    // lock shared mode to check <tableid, <min,max>> exist or not.
+    _auto_increment_mutex.lock_shared();
+    auto iter = _tableid_auto_increment_map.find(tableid);
+    auto end_iter = _tableid_auto_increment_map.end();
+    std::pair<int64_t, int64_t> *interval;
+
+    if (UNLIKELY(iter == end_iter)) {
+        _auto_increment_mutex.unlock_shared();
+        // lock mode to add the new <tableid, <min,max>>
+        _auto_increment_mutex.lock();
+
+        if (_tableid_auto_increment_map.find(tableid) == _tableid_auto_increment_map.end()) {
+            _tableid_auto_increment_map.insert({tableid, new std::pair<int64_t,int64_t>({0, 0})});
+            need_init = true;
+        }
+
+        interval = _tableid_auto_increment_map.at(tableid);
+        _auto_increment_mutex.unlock();
+    } else {
+        interval = _tableid_auto_increment_map.at(tableid);
+        _auto_increment_mutex.unlock_shared();
+    }
+
+    // lock shard for different tableid
+    std::unique_lock<std::mutex> l((*_tables_auto_increment_mutex_shards)
+                                   [tableid % _tables_auto_increment_shards_mask]);
+
+    // avaliable id interval: [cur_avaliable_min_id, cur_max_id)
+    int64_t &cur_avaliable_min_id = interval->first;
+    int64_t &cur_max_id = interval->second;
+    CHECK_GE(cur_max_id, cur_avaliable_min_id);
+
+    size_t cur_avaliable_rows = cur_max_id - cur_avaliable_min_id;
+    auto ids_iter = ids.begin();
+    if (UNLIKELY(need_init || num_row > cur_avaliable_rows)) {
+        size_t alloc_rows = num_row - cur_avaliable_rows;
+        // rpc request for the new available interval from fe
+        TAllocateAutoIncrementIdParam alloc_params;
+        TAllocateAutoIncrementIdResult alloc_result;
+
+        alloc_params.__set_table_id(tableid);
+        alloc_params.__set_rows(alloc_rows);
+
+        auto st = _get_remote_next_increment_id_interval(alloc_params, &alloc_result);
+
+        if (!st.ok()) {
+            assert(0);
+        }
+
+        if (cur_avaliable_rows > 0) {
+            std::iota(ids_iter, ids_iter + cur_avaliable_rows, cur_avaliable_min_id);
+            ids_iter += cur_avaliable_rows;
+        }
+
+        cur_avaliable_min_id = alloc_result.auto_increment_id;
+        cur_max_id = alloc_result.auto_increment_id + alloc_result.allocated_rows;
+
+        num_row -= cur_avaliable_rows;
+    }
+
+    std::iota(ids_iter, ids.end(), cur_avaliable_min_id);
+    cur_avaliable_min_id += num_row;
 }
 
 DummyStorageEngine::DummyStorageEngine(const EngineOptions& options)

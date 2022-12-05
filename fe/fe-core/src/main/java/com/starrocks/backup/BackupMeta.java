@@ -23,10 +23,12 @@ package com.starrocks.backup;
 
 import com.google.common.collect.Maps;
 import com.google.gson.annotations.SerializedName;
+import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Table;
 import com.starrocks.common.io.Writable;
 import com.starrocks.meta.MetaContext;
 import com.starrocks.persist.gson.GsonPostProcessable;
+import com.starrocks.server.GlobalStateMgr;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -49,6 +51,8 @@ public class BackupMeta implements Writable, GsonPostProcessable {
     private Map<String, Table> tblNameMap = Maps.newHashMap();
     // tbl id -> tbl
     private Map<Long, Table> tblIdMap = Maps.newHashMap();
+    // id -> auto increment id
+    private Map<Long, Long> tblAutoIncrementIdMap = Maps.newHashMap();
 
     private BackupMeta() {
 
@@ -58,6 +62,30 @@ public class BackupMeta implements Writable, GsonPostProcessable {
         for (Table table : tables) {
             tblNameMap.put(table.getName(), table);
             tblIdMap.put(table.getId(), table);
+
+            Long id = GlobalStateMgr.getCurrentState().getCurrentAutoIncrementIdByTableId(table.getId());
+            for (Column col : table.getBaseSchema()) {
+                if (col.isAutoIncrement() && id != null) {
+                    tblAutoIncrementIdMap.put(table.getId(), id);
+                    break;
+                }
+            }
+        }
+    }
+
+    public void checkAndRecoverAutoIncrementId(Table tbl) {
+        String name = tbl.getName();
+
+        // table id maybe different from the backp one,
+        // so we should get the oldId and acquire the 
+        // autoIncrementId from backuped tblAutoIncrementIdMap
+        // and register the <newid, autoIncrementId> in global map.
+        Table oldTbl = tblNameMap.get(name);
+        Long autoIncrementId = tblAutoIncrementIdMap.get(oldTbl.getId());
+
+        if (autoIncrementId != null) {
+            Long tableId = tbl.getId();
+            GlobalStateMgr.getCurrentState().addAutoIncrementIdByTableId(tableId, autoIncrementId);
         }
     }
 
@@ -114,6 +142,12 @@ public class BackupMeta implements Writable, GsonPostProcessable {
         for (Table table : tblNameMap.values()) {
             table.write(out);
         }
+
+        out.writeInt(tblAutoIncrementIdMap.size());
+        for (Map.Entry<Long, Long> entry : tblAutoIncrementIdMap.entrySet()) {
+            out.writeLong(entry.getKey());
+            out.writeLong(entry.getValue());
+        }
     }
 
     public void readFields(DataInput in) throws IOException {
@@ -122,6 +156,13 @@ public class BackupMeta implements Writable, GsonPostProcessable {
             Table tbl = Table.read(in);
             tblNameMap.put(tbl.getName(), tbl);
             tblIdMap.put(tbl.getId(), tbl);
+        }
+
+        int autoIncrementSize = in.readInt();
+        for (int i = 0; i < autoIncrementSize; ++i) {
+            Long tableId = in.readLong();
+            Long id = in.readLong();
+            tblAutoIncrementIdMap.put(tableId, id);
         }
     }
 

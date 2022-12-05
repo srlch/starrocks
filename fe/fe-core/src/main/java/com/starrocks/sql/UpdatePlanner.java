@@ -84,7 +84,7 @@ public class UpdatePlanner {
                 partitionIds.add(partition.getId());
             }
             TWriteQuorumType writeQuorum = table.writeQuorum();
-            DataSink dataSink = new OlapTableSink(table, olapTuple, partitionIds, writeQuorum);
+            DataSink dataSink = new OlapTableSink(table, olapTuple, partitionIds, writeQuorum, false);
             execPlan.getFragments().get(0).setSink(dataSink);
             execPlan.getFragments().get(0).setLoadGlobalDicts(globalDicts);
             if (isEnablePipeline && canUsePipeline) {

@@ -7,6 +7,7 @@ import com.google.common.collect.Sets;
 import com.starrocks.alter.SchemaChangeHandler;
 import com.starrocks.analysis.DescriptorTable;
 import com.starrocks.analysis.Expr;
+import com.starrocks.analysis.NullLiteral;
 import com.starrocks.analysis.SlotDescriptor;
 import com.starrocks.analysis.StringLiteral;
 import com.starrocks.analysis.TableName;
@@ -15,6 +16,7 @@ import com.starrocks.catalog.Column;
 import com.starrocks.catalog.KeysType;
 import com.starrocks.catalog.MysqlTable;
 import com.starrocks.catalog.OlapTable;
+import com.starrocks.catalog.Type;
 import com.starrocks.common.Pair;
 import com.starrocks.planner.DataSink;
 import com.starrocks.planner.MysqlTableSink;
@@ -79,6 +81,7 @@ public class InsertPlanner {
     // Only for unit test
     public static boolean enableSingleReplicationShuffle = false;
     private boolean shuffleServiceEnable = false;
+    boolean nullExprInAutoIncrement = false;
 
     public ExecPlan plan(InsertStmt insertStmt, ConnectContext session) {
         QueryRelation queryRelation = insertStmt.getQueryStatement().getQueryRelation();
@@ -161,7 +164,7 @@ public class InsertPlanner {
                 TWriteQuorumType writeQuorum = olapTable.writeQuorum();
 
                 dataSink = new OlapTableSink((OlapTable) insertStmt.getTargetTable(), olapTuple,
-                        insertStmt.getTargetPartitionIds(), canUsePipeline, writeQuorum);
+                        insertStmt.getTargetPartitionIds(), canUsePipeline, writeQuorum, nullExprInAutoIncrement);
                 execPlan.getFragments().get(0).setPipelineDop(1);
             } else if (insertStmt.getTargetTable() instanceof MysqlTable) {
                 dataSink = new MysqlTableSink((MysqlTable) insertStmt.getTargetTable());
@@ -206,10 +209,18 @@ public class InsertPlanner {
         RelationFields fields = insertStatement.getQueryStatement().getQueryRelation().getRelationFields();
         for (int columnIdx = 0; columnIdx < insertStatement.getTargetTable().getBaseSchema().size(); ++columnIdx) {
             Column targetColumn = fullSchema.get(columnIdx);
+            boolean isAutoIncrement = targetColumn.isAutoIncrement();
             if (insertStatement.getTargetColumnNames() == null) {
                 for (List<Expr> row : values.getRows()) {
+                    if (!nullExprInAutoIncrement && row.get(columnIdx).getType() == Type.NULL) {
+                        nullExprInAutoIncrement = true;
+                    }
                     if (row.get(columnIdx) instanceof DefaultValueExpr) {
-                        row.set(columnIdx, new StringLiteral(targetColumn.calculatedDefaultValue()));
+                        if (isAutoIncrement) {
+                            row.set(columnIdx, new NullLiteral());
+                        } else {
+                            row.set(columnIdx, new StringLiteral(targetColumn.calculatedDefaultValue()));
+                        }
                     }
                     row.set(columnIdx, TypeManager.addCastExpr(row.get(columnIdx), targetColumn.getType()));
                 }
@@ -218,8 +229,15 @@ public class InsertPlanner {
                 int idx = insertStatement.getTargetColumnNames().indexOf(targetColumn.getName().toLowerCase());
                 if (idx != -1) {
                     for (List<Expr> row : values.getRows()) {
+                        if (!nullExprInAutoIncrement && row.get(idx).getType() == Type.NULL) {
+                            nullExprInAutoIncrement = true;
+                        }
                         if (row.get(idx) instanceof DefaultValueExpr) {
-                            row.set(idx, new StringLiteral(targetColumn.calculatedDefaultValue()));
+                            if (isAutoIncrement) {
+                                row.set(columnIdx, new NullLiteral());
+                            } else {
+                                row.set(columnIdx, new StringLiteral(targetColumn.calculatedDefaultValue()));
+                            }
                         }
                         row.set(idx, TypeManager.addCastExpr(row.get(idx), targetColumn.getType()));
                     }
@@ -245,7 +263,7 @@ public class InsertPlanner {
                 if (idx == -1) {
                     ScalarOperator scalarOperator;
                     Column.DefaultValueType defaultValueType = targetColumn.getDefaultValueType();
-                    if (defaultValueType == Column.DefaultValueType.NULL) {
+                    if (defaultValueType == Column.DefaultValueType.NULL || targetColumn.isAutoIncrement()) {
                         scalarOperator = ConstantOperator.createNull(targetColumn.getType());
                     } else if (defaultValueType == Column.DefaultValueType.CONST) {
                         scalarOperator = ConstantOperator.createVarchar(targetColumn.calculatedDefaultValue());

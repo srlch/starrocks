@@ -104,12 +104,14 @@ public class OlapTableSink extends DataSink {
     private boolean enablePipelineLoad;
     private TWriteQuorumType writeQuorum;
 
+    private boolean nullExprInAutoIncrement;
+
     public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds,
-                         TWriteQuorumType writeQuorum) {
-        this(dstTable, tupleDescriptor, partitionIds, true, writeQuorum);
+                         TWriteQuorumType writeQuorum, boolean nullExprInAutoIncrement) {
+        this(dstTable, tupleDescriptor, partitionIds, true, writeQuorum, nullExprInAutoIncrement);
     }
 
-    public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds, boolean enablePipelineLoad, TWriteQuorumType writeQuorum) {
+    public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds, boolean enablePipelineLoad, TWriteQuorumType writeQuorum, boolean nullExprInAutoIncrement) {
         this.dstTable = dstTable;
         this.tupleDescriptor = tupleDescriptor;
         Preconditions.checkState(!CollectionUtils.isEmpty(partitionIds));
@@ -117,6 +119,7 @@ public class OlapTableSink extends DataSink {
         this.clusterId = dstTable.getClusterId();
         this.enablePipelineLoad = enablePipelineLoad;
         this.writeQuorum = writeQuorum;
+        this.nullExprInAutoIncrement = nullExprInAutoIncrement;
     }
 
     public void init(TUniqueId loadId, long txnId, long dbId, long loadChannelTimeoutS)
@@ -124,6 +127,7 @@ public class OlapTableSink extends DataSink {
         TOlapTableSink tSink = new TOlapTableSink();
         tSink.setLoad_id(loadId);
         tSink.setTxn_id(txnId);
+        tSink.setNull_expr_in_auto_increment(nullExprInAutoIncrement);
         TransactionState txnState =
                 GlobalStateMgr.getCurrentGlobalTransactionMgr()
                         .getTransactionState(dbId, txnId);

@@ -147,11 +147,13 @@ static Status t_column_to_pb_column(int32_t unique_id, const TColumn& t_column, 
     // A child column cannot be a key column.
     auto is_key = depth == 0 && t_column.is_key;
     bool is_nullable = depth > 0 || t_column.is_allow_null;
+    bool is_auto_increment = t_column.is_auto_increment;
 
     column_pb->set_unique_id(unique_id);
     column_pb->set_name(c_name);
     column_pb->set_is_key(is_key);
     column_pb->set_is_nullable(is_nullable);
+    column_pb->set_is_auto_increment(is_auto_increment);
     if (depth > 0 || is_key) {
         auto agg_method = OLAP_FIELD_AGGREGATION_NONE;
         column_pb->set_aggregation(TabletColumn::get_string_by_aggregation_type(agg_method));

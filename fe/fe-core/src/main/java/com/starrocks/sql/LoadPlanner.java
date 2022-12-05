@@ -386,7 +386,7 @@ public class LoadPlanner {
             // 4. Olap table sink
             TWriteQuorumType writeQuorum = ((OlapTable) destTable).writeQuorum();
 
-            dataSink = new OlapTableSink((OlapTable) destTable, tupleDesc, partitionIds, canUsePipeLine, writeQuorum);
+            dataSink = new OlapTableSink((OlapTable) destTable, tupleDesc, partitionIds, canUsePipeLine, writeQuorum, false);
             if (completeTabletSink) {
                 ((OlapTableSink) dataSink).init(loadId, txnId, dbId, timeoutS);
                 ((OlapTableSink) dataSink).complete();

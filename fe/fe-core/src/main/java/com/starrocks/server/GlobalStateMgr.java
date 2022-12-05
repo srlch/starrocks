@@ -875,6 +875,7 @@ public class GlobalStateMgr {
         // 3. Load image first and replay edits
         initJournal();
         loadImage(this.imageDir); // load image file
+        loadAutoIncrementImage(); // load auto-increment image file
 
         // 4. create load and export job label cleaner thread
         createLabelCleaner();
@@ -1417,6 +1418,46 @@ public class GlobalStateMgr {
         compactionManager = CompactionManager.loadCompactionManager(in);
         checksum ^= compactionManager.getChecksum();
         return checksum;
+    }
+
+    public void loadAutoIncrementImage() throws IOException {
+        Storage storage = new Storage(this.imageDir);
+        File autoIncrementFile = storage.getAutoIncrementImageFile();
+        if (!autoIncrementFile.exists()) {
+            LOG.info("AutoIncrement image does not exist: {}", autoIncrementFile.getAbsolutePath());
+            return;
+        }
+
+        long curChecksum;
+        long checksum;
+        try (DataInputStream dis = new DataInputStream(new BufferedInputStream(new FileInputStream(autoIncrementFile)))) {
+            curChecksum = localMetastore.loadAutoIncrementId(dis);
+            checksum = dis.readLong();
+        }
+
+        Preconditions.checkState(curChecksum == checksum, curChecksum + " vs. " + checksum);
+        
+        return;
+    }
+
+    public void saveAutoIncrementImage() throws IOException {
+        Storage storage = new Storage(this.imageDir);
+        File autoIncrementFile = storage.getAutoIncrementImageFile();
+        File ckpt = new File(this.imageDir, Storage.AUTO_INCREMENT_NEW);
+
+        if (!ckpt.exists()) {
+            ckpt.createNewFile();
+        }
+
+        try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(ckpt))) {
+            long checksum = localMetastore.saveAutoIncrementId(dos);
+            dos.writeLong(checksum);
+        }
+
+        if (!ckpt.renameTo(autoIncrementFile)) {
+            ckpt.delete();
+            throw new IOException();
+        }
     }
 
     // Only called by checkpoint thread
@@ -3182,6 +3223,22 @@ public class GlobalStateMgr {
 
     public void replayReplaceTempPartition(ReplacePartitionOperationLog replaceTempPartitionLog) {
         localMetastore.replayReplaceTempPartition(replaceTempPartitionLog);
+    }
+
+    public Long allocateAutoIncrementId(Long tableId, Long rows) {
+        return localMetastore.allocateAutoIncrementId(tableId, rows);
+    }
+
+    public void removeAutoIncrementIdByTableId(Long tableId) {
+        localMetastore.removeAutoIncrementIdByTableId(tableId);
+    }
+
+    public Long getCurrentAutoIncrementIdByTableId(Long tableId) {
+        return localMetastore.getCurrentAutoIncrementIdByTableId(tableId);
+    }
+
+    public void addAutoIncrementIdByTableId(Long tableId, Long id) {
+        localMetastore.addAutoIncrementIdByTableId(tableId, id);
     }
 
     public void installPlugin(InstallPluginStmt stmt) throws UserException, IOException {

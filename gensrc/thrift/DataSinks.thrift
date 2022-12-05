@@ -167,6 +167,7 @@ struct TOlapTableSink {
     16: optional string txn_trace_parent
     17: optional Types.TKeysType keys_type
     18: optional Types.TWriteQuorumType write_quorum_type
+    19: optional bool null_expr_in_auto_increment
 }
 
 struct TDataSink {

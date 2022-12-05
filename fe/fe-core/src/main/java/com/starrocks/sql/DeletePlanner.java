@@ -90,7 +90,7 @@ public class DeletePlanner {
                 partitionIds.add(partition.getId());
             }
             TWriteQuorumType writeQuorum = table.writeQuorum();
-            DataSink dataSink = new OlapTableSink(table, olapTuple, partitionIds, writeQuorum);
+            DataSink dataSink = new OlapTableSink(table, olapTuple, partitionIds, writeQuorum, false);
             execPlan.getFragments().get(0).setSink(dataSink);
             if (isEnablePipeline && canUsePipeline) {
                 PlanFragment sinkFragment = execPlan.getFragments().get(0);

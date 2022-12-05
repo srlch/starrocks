@@ -91,6 +91,8 @@ public class StreamLoadScanNode extends LoadScanNode {
     // 3. use vectorized engine
     private boolean useVectorizedLoad;
 
+    private boolean nullExprInAutoIncrement;
+
     // used to construct for streaming loading
     public StreamLoadScanNode(
             TUniqueId loadId, PlanNodeId id, TupleDescriptor tupleDesc, Table dstTable, StreamLoadTask streamLoadTask) {
@@ -99,10 +101,15 @@ public class StreamLoadScanNode extends LoadScanNode {
         this.dstTable = dstTable;
         this.streamLoadTask = streamLoadTask;
         this.useVectorizedLoad = false;
+        this.nullExprInAutoIncrement = true;
     }
 
     public void setUseVectorizedLoad(boolean useVectorizedLoad) {
         this.useVectorizedLoad = useVectorizedLoad;
+    }
+
+    public boolean nullExprInAutoIncrement() {
+        return nullExprInAutoIncrement;
     }
 
     @Override
@@ -229,8 +236,9 @@ public class StreamLoadScanNode extends LoadScanNode {
                                     + column.getDefaultExpr().getExpr());
                         }
                     } else if (defaultValueType == Column.DefaultValueType.NULL) {
-                        if (column.isAllowNull()) {
+                        if (column.isAllowNull() || column.isAutoIncrement()) {
                             expr = NullLiteral.create(column.getType());
+                            nullExprInAutoIncrement = false;
                         } else {
                             throw new AnalysisException("column has no source field, column=" + column.getName());
                         }
