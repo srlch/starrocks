@@ -280,6 +280,7 @@ showDataStmt
 createTableStatement
     : CREATE EXTERNAL? TABLE (IF NOT EXISTS)? qualifiedName
           '(' columnDesc (',' columnDesc)* (',' indexDesc)* ')'
+          (checkDesc (',' checkDesc)*)?
           engineDesc?
           charsetDesc?
           keyDesc?
@@ -311,6 +312,11 @@ indexDesc
 
 engineDesc
     : ENGINE EQ identifier
+    ;
+
+checkDesc
+    : CHECK '(' identifier (EQ | NEQ | LT | LTE | GT | GTE) string ')'
+    | CHECK '(' identifier NOT NULL ')'
     ;
 
 charsetDesc
