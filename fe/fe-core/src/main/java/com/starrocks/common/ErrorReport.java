@@ -25,9 +25,12 @@ import com.starrocks.qe.ConnectContext;
 import com.starrocks.sql.analyzer.SemanticException;
 import com.starrocks.sql.common.ErrorType;
 import com.starrocks.sql.optimizer.validate.ValidateException;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 // Used to report error happened when execute SQL of user
 public class ErrorReport {
+    private static final Logger LOG = LogManager.getLogger(ErrorReport.class);
 
     private static String reportCommon(String pattern, ErrorCode errorCode, Object... objs) {
         String errMsg;
@@ -41,6 +44,7 @@ public class ErrorReport {
             ctx.getState().setError(errMsg);
         }
         // TODO(zc): think about LOG to file
+        LOG.warn(errMsg);
         return errMsg;
     }
 
