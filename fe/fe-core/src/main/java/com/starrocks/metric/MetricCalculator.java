@@ -59,6 +59,10 @@ public class MetricCalculator extends TimerTask {
 
         long interval = (currentTs - lastTs) / 1000 + 1;
 
+        if () {
+            MetricRepo.GAUGE_SECURITY_WARN_COUNT_IN_LAST_TEN_SECONDS.setValue();
+        }
+
         // qps
         long currentQueryCounter = MetricRepo.COUNTER_QUERY_ALL.getValue();
         double qps = (double) (currentQueryCounter - lastQueryCounter) / interval;

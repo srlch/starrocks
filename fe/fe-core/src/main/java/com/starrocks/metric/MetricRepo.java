@@ -117,6 +117,7 @@ public final class MetricRepo {
     public static GaugeMetricImpl<Double> GAUGE_QUERY_LATENCY_P999;
     public static GaugeMetricImpl<Long> GAUGE_MAX_TABLET_COMPACTION_SCORE;
     public static GaugeMetricImpl<Long> GAUGE_STACKED_JOURNAL_NUM;
+    public static GaugeMetricImpl<Long> GAUGE_SECURITY_WARN_COUNT_IN_LAST_TEN_SECONDS;
 
     public static List<GaugeMetricImpl<Long>> GAUGE_ROUTINE_LOAD_LAGS;
 
@@ -273,6 +274,11 @@ public final class MetricRepo {
                 "editlog_stacked_num", MetricUnit.OPERATIONS, "counter of edit log that are stacked");
         GAUGE_STACKED_JOURNAL_NUM.setValue(0L);
         STARROCKS_METRIC_REGISTER.addMetric(GAUGE_STACKED_JOURNAL_NUM);
+
+        GAUGE_SECURITY_WARN_COUNT_IN_LAST_TEN_SECONDS = new GaugeMetricImpl<>(
+                "security_warn_count_in_last_ten_seconds", MetricUnit.OPERATIONS, "counter of security warning");
+                GAUGE_SECURITY_WARN_COUNT_IN_LAST_TEN_SECONDS.setValue(0L);
+        STARROCKS_METRIC_REGISTER.addMetric(GAUGE_SECURITY_WARN_COUNT_IN_LAST_TEN_SECONDS);
 
         GAUGE_QUERY_LATENCY_MEAN =
                 new GaugeMetricImpl<>("query_latency", MetricUnit.MILLISECONDS, "mean of query latency");
