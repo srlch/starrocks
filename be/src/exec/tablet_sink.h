@@ -443,6 +443,8 @@ private:
     bool _has_auto_increment = false;
 
     bool _null_expr_in_auto_increment = false;
+
+    std::string _auto_increment_column_name;
 };
 
 } // namespace stream_load

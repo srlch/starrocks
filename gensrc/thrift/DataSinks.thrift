@@ -168,6 +168,7 @@ struct TOlapTableSink {
     17: optional Types.TKeysType keys_type
     18: optional Types.TWriteQuorumType write_quorum_type
     19: optional bool null_expr_in_auto_increment
+    20: optional string auto_increment_column_name
 }
 
 struct TDataSink {

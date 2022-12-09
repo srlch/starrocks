@@ -106,6 +106,8 @@ public class OlapTableSink extends DataSink {
 
     private boolean nullExprInAutoIncrement;
 
+    private String autoIncrementColumnName;
+
     public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds,
                          TWriteQuorumType writeQuorum, boolean nullExprInAutoIncrement) {
         this(dstTable, tupleDescriptor, partitionIds, true, writeQuorum, nullExprInAutoIncrement);
@@ -120,6 +122,13 @@ public class OlapTableSink extends DataSink {
         this.enablePipelineLoad = enablePipelineLoad;
         this.writeQuorum = writeQuorum;
         this.nullExprInAutoIncrement = nullExprInAutoIncrement;
+
+        this.autoIncrementColumnName = null;
+         for (Column column : dstTable.getBaseSchema()) {
+             if (column.isAutoIncrement()) {
+                 this.autoIncrementColumnName = column.getName();
+             }
+         }
     }
 
     public void init(TUniqueId loadId, long txnId, long dbId, long loadChannelTimeoutS)
@@ -128,6 +137,7 @@ public class OlapTableSink extends DataSink {
         tSink.setLoad_id(loadId);
         tSink.setTxn_id(txnId);
         tSink.setNull_expr_in_auto_increment(nullExprInAutoIncrement);
+        tSink.setAuto_increment_column_name(autoIncrementColumnName);
         TransactionState txnState =
                 GlobalStateMgr.getCurrentGlobalTransactionMgr()
                         .getTransactionState(dbId, txnId);

@@ -766,6 +766,7 @@ Status OlapTableSink::init(const TDataSink& t_sink) {
     _is_lake_table = table_sink.is_lake_table;
     _keys_type = table_sink.keys_type;
     _null_expr_in_auto_increment = table_sink.null_expr_in_auto_increment;
+    _auto_increment_column_name = table_sink.auto_increment_column_name;
     if (table_sink.__isset.write_quorum_type) {
         _write_quorum_type = table_sink.write_quorum_type;
     }
@@ -1302,31 +1303,19 @@ Status OlapTableSink::_fill_auto_increment_id(vectorized::Chunk* chunk) {
     _auto_increment_slot_id = -1;
     _has_auto_increment = false;
 
-    // Get arbitrary tablet from arbitrary partition.
-    // It is guaranteed that, in a single OlapTableSink,
-    // all tablets in all partitions must belong to the
-    // same table. TabletColumn in TabletSchema
-    // must be the same for all tablets.
-    auto part = _vectorized_partition->get_partitions()[0];
-    int64_t tablet_id = part->indexes[0].tablets[0];
-    auto tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id);
-    auto tablet_schema = tablet->tablet_meta()->tablet_schema_ptr();
+    // no auto increment column.
+     if (_auto_increment_column_name.size() == 0) {
+         return Status::OK();
+     }
 
-    // Get the auto_increment column from chunk.
-    // And fill the column.
-    for (auto &col : tablet_schema->columns()) {
-        if (col.is_auto_increment()) {
-            std::string col_name(col.name().data(), col.name().size());
-            for (auto &slot : _output_tuple_desc->slots()) {
-                if (slot->col_name() == col_name) {
-                    _fill_auto_increment_id_internal(chunk, slot, tablet->tablet_meta()->table_id());
-                    break;
-                }
-            }
-            break;
-        }
-    }
-    return Status::OK();
+     for (auto &slot : _output_tuple_desc->slots()) {
+         if (slot->col_name() == _auto_increment_column_name) {
+             _fill_auto_increment_id_internal(chunk, slot, _schema->table_id());
+             break;
+         }
+     }
+
+     return Status::OK();
 }
 
 Status OlapTableSink::_fill_auto_increment_id_internal(vectorized::Chunk* chunk, SlotDescriptor *slot, int64_t table_id) {
