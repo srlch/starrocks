@@ -216,9 +216,10 @@ public:
     //          column 2 value@rssid:6 rowid:4,
     //   ]
     // ]
-    Status get_column_values(std::vector<uint32_t>& column_ids, bool with_default,
+    Status get_column_values(std::vector<uint32_t>& column_ids, size_t num_default,
                              std::map<uint32_t, std::vector<uint32_t>>& rowids_by_rssid,
-                             vector<std::unique_ptr<vectorized::Column>>* columns);
+                             vector<std::unique_ptr<vectorized::Column>>* columns,
+                             std::vector<uint32_t>* idxes);
 
     Status prepare_partial_update_states(Tablet* tablet, const std::vector<ColumnUniquePtr>& upserts,
                                          EditVersion* read_version, uint32_t* next_rowset_id,

@@ -250,7 +250,7 @@ Status RowsetUpdateState::_prepare_partial_update_states(Tablet* tablet, Rowset*
         total_nondefault_rows += _partial_update_states[i].src_rss_rowids.size() - num_default;
         // get column values by rowid, also get default values if needed
         RETURN_IF_ERROR(
-                tablet->updates()->get_column_values(read_column_ids, num_default > 0, rowids_by_rssid, &read_columns));
+                tablet->updates()->get_column_values(read_column_ids, num_default, rowids_by_rssid, &read_columns, &idxes));
         for (size_t col_idx = 0; col_idx < read_column_ids.size(); col_idx++) {
             _partial_update_states[i].write_columns[col_idx]->append_selective(*read_columns[col_idx], idxes.data(), 0,
                                                                                idxes.size());
@@ -322,8 +322,8 @@ Status RowsetUpdateState::_check_and_resolve_conflict(Tablet* tablet, Rowset* ro
             std::vector<uint32_t> read_idxes;
             plan_read_by_rssid(conflict_rowids, &num_default, &rowids_by_rssid, &read_idxes);
             DCHECK_EQ(conflict_idxes.size(), read_idxes.size());
-            RETURN_IF_ERROR(tablet->updates()->get_column_values(read_column_ids, num_default > 0, rowids_by_rssid,
-                                                                 &read_columns));
+            RETURN_IF_ERROR(tablet->updates()->get_column_values(read_column_ids, num_default, rowids_by_rssid,
+                                                                 &read_columns, &read_idxes));
 
             for (size_t col_idx = 0; col_idx < read_column_ids.size(); col_idx++) {
                 std::unique_ptr<vectorized::Column> new_write_column =

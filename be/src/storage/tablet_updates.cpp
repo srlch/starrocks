@@ -2913,20 +2913,35 @@ void TabletUpdates::_update_total_stats(const std::vector<uint32_t>& rowsets, si
     }
 }
 
-Status TabletUpdates::get_column_values(std::vector<uint32_t>& column_ids, bool with_default,
+Status TabletUpdates::get_column_values(std::vector<uint32_t>& column_ids, size_t num_default,
                                         std::map<uint32_t, std::vector<uint32_t>>& rowids_by_rssid,
-                                        vector<std::unique_ptr<vectorized::Column>>* columns) {
+                                        vector<std::unique_ptr<vectorized::Column>>* columns,
+                                        std::vector<uint32_t>* idxes) {
     std::map<uint32_t, RowsetSharedPtr> rssid_to_rowsets;
+    bool has_auto_increment = false;
+    std::vector<int64_t> auo_increment_ids;
+    int auto_increment_index = -1;
+
     {
         std::lock_guard<std::mutex> l(_rowsets_lock);
         for (const auto& rowset : _rowsets) {
             rssid_to_rowsets.insert(rowset);
         }
     }
-    if (with_default) {
+    if (num_default > 0) {
         for (auto i = 0; i < column_ids.size(); ++i) {
             const TabletColumn& tablet_column = _tablet.tablet_schema().column(column_ids[i]);
-            if (tablet_column.has_default_value()) {
+            if (tablet_column.is_auto_increment()) {
+                has_auto_increment = true;
+                auto_increment_index = i;
+                auo_increment_ids.resize(num_default);
+
+                int64_t table_id = _tablet.tablet_meta()->table_id();
+                StorageEngine::instance()->get_next_increment_id_interval(table_id, num_default, auo_increment_ids);
+
+                // append the first auto increment id
+                dynamic_cast<vectorized::Int64Column*>((*columns)[i].get())->append(auo_increment_ids[0]);
+            } else if (tablet_column.has_default_value()) {
                 const TypeInfoPtr& type_info = get_type_info(tablet_column);
                 std::unique_ptr<DefaultValueColumnIterator> default_value_iter =
                         std::make_unique<DefaultValueColumnIterator>(
@@ -2980,6 +2995,32 @@ Status TabletUpdates::get_column_values(std::vector<uint32_t>& column_ids, bool 
             RETURN_IF_ERROR(col_iter->init(iter_opts));
             RETURN_IF_ERROR(col_iter->fetch_values_by_rowid(rowids.data(), rowids.size(), (*columns)[i].get()));
         }
+    }
+
+    // append remain auto increment id in corresponding column
+    // and reset idxes
+    if (idxes != nullptr && has_auto_increment && num_default > 1) {
+        DCHECK_NE(auto_increment_index, -1);
+        DCHECK_EQ(auo_increment_ids.size(), num_default);
+
+        std::vector<size_t> new_idxes;
+        size_t last = (*columns)[auto_increment_index]->size() - 1;
+
+        for (auto i = 1; i < auo_increment_ids.size(); ++i) {
+            dynamic_cast<vectorized::Int64Column*>((*columns)[auto_increment_index].get())->append(auo_increment_ids[i]);
+            ++last;
+            new_idxes.emplace_back(last);
+        }
+
+        // skip first element
+        size_t j = 0;
+        for (size_t i = 1; i < idxes->size(); ++i) {
+            if ((*idxes)[i] == 0) {
+                (*idxes)[i] = new_idxes[j];
+                ++j;
+            }
+        }
+        DCHECK_EQ(j, new_idxes.size());
     }
     return Status::OK();
 }
