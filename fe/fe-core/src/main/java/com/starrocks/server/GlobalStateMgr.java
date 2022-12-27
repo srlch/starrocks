@@ -299,6 +299,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class GlobalStateMgr {
     private static final Logger LOG = LogManager.getLogger(GlobalStateMgr.class);
@@ -472,6 +473,8 @@ public class GlobalStateMgr {
     private CompactionManager compactionManager;
 
     private ConfigRefreshDaemon configRefreshDaemon;
+
+    private ReentrantLock autoIncrementImageLock = new ReentrantLock();
 
     public List<Frontend> getFrontends(FrontendNodeType nodeType) {
         return nodeMgr.getFrontends(nodeType);
@@ -921,6 +924,7 @@ public class GlobalStateMgr {
         // 3. Load image first and replay edits
         initJournal();
         loadImage(this.imageDir); // load image file
+        loadAutoIncrementImage(); // load auto-increment image file
 
         // 4. create load and export job label cleaner thread
         createLabelCleaner();
@@ -1518,6 +1522,56 @@ public class GlobalStateMgr {
         streamLoadManager = StreamLoadManager.loadStreamLoadManager(in);
         checksum ^= streamLoadManager.getChecksum();
         return checksum;
+    }
+
+    public void loadAutoIncrementImage() throws IOException {
+        Storage storage = new Storage(this.imageDir);
+        File autoIncrementFile = storage.getAutoIncrementImageFile();
+        if (!autoIncrementFile.exists()) {
+            LOG.info("AutoIncrement image does not exist: {}", autoIncrementFile.getAbsolutePath());
+            return;
+        }
+
+        long curChecksum;
+        long checksum;
+        try (DataInputStream dis = new DataInputStream(new BufferedInputStream(new FileInputStream(autoIncrementFile)))) {
+            curChecksum = localMetastore.loadAutoIncrementId(dis);
+            checksum = dis.readLong();
+        }
+
+        Preconditions.checkState(curChecksum == checksum, curChecksum + " vs. " + checksum);
+        
+        return;
+    }
+
+    public void saveAutoIncrementImage() throws IOException {
+        Storage storage = new Storage(this.imageDir);
+        File autoIncrementFile = storage.getAutoIncrementImageFile();
+        long tid = Thread.currentThread().getId();
+        File ckpt = new File(this.imageDir, Storage.AUTO_INCREMENT_NEW + String.valueOf(tid));
+
+        if (!ckpt.exists()) {
+            ckpt.createNewFile();
+        } else {
+            LOG.warn("Temp Auto Increment Image already exists.");
+            // must reset the temp auto increment image file
+            ckpt.delete();
+            ckpt.createNewFile();
+        }
+
+        try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(ckpt))) {
+            long checksum = localMetastore.saveAutoIncrementId(dos);
+            dos.writeLong(checksum);
+        }
+
+        autoIncrementImageLock.lock();
+        if (!ckpt.renameTo(autoIncrementFile)) {
+            autoIncrementImageLock.unlock();
+            ckpt.delete();
+            LOG.warn("Temp Auto Increment Image rename failed.");
+            throw new IOException();
+        }
+        autoIncrementImageLock.unlock();
     }
 
     // Only called by checkpoint thread
@@ -3328,6 +3382,22 @@ public class GlobalStateMgr {
 
     public void replayReplaceTempPartition(ReplacePartitionOperationLog replaceTempPartitionLog) {
         localMetastore.replayReplaceTempPartition(replaceTempPartitionLog);
+    }
+
+    public Long allocateAutoIncrementId(Long tableId, Long rows) {
+        return localMetastore.allocateAutoIncrementId(tableId, rows);
+    }
+
+    public void removeAutoIncrementIdByTableId(Long tableId) {
+        localMetastore.removeAutoIncrementIdByTableId(tableId);
+    }
+
+    public Long getCurrentAutoIncrementIdByTableId(Long tableId) {
+        return localMetastore.getCurrentAutoIncrementIdByTableId(tableId);
+    }
+
+    public void addAutoIncrementIdByTableId(Long tableId, Long id) {
+        localMetastore.addAutoIncrementIdByTableId(tableId, id);
     }
 
     public void installPlugin(InstallPluginStmt stmt) throws UserException, IOException {

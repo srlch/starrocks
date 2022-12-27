@@ -120,13 +120,18 @@ public class OlapTableSink extends DataSink {
     private final TWriteQuorumType writeQuorum;
     private final boolean enableReplicatedStorage;
 
+    private boolean nullExprInAutoIncrement;
+
+    private String autoIncrementColumnName;
+
     public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds,
-            TWriteQuorumType writeQuorum, boolean enableReplicatedStorage) {
-        this(dstTable, tupleDescriptor, partitionIds, true, writeQuorum, enableReplicatedStorage);
+            TWriteQuorumType writeQuorum, boolean enableReplicatedStorage, boolean nullExprInAutoIncrement) {
+        this(dstTable, tupleDescriptor, partitionIds, true, writeQuorum, enableReplicatedStorage, nullExprInAutoIncrement);
     }
 
     public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds,
-            boolean enablePipelineLoad, TWriteQuorumType writeQuorum, boolean enableReplicatedStorage) {
+            boolean enablePipelineLoad, TWriteQuorumType writeQuorum, boolean enableReplicatedStorage,
+            boolean nullExprInAutoIncrement) {
         this.dstTable = dstTable;
         this.tupleDescriptor = tupleDescriptor;
         Preconditions.checkState(!CollectionUtils.isEmpty(partitionIds));
@@ -135,6 +140,14 @@ public class OlapTableSink extends DataSink {
         this.enablePipelineLoad = enablePipelineLoad;
         this.writeQuorum = writeQuorum;
         this.enableReplicatedStorage = enableReplicatedStorage;
+        this.nullExprInAutoIncrement = nullExprInAutoIncrement;
+
+        this.autoIncrementColumnName = null;
+         for (Column column : dstTable.getBaseSchema()) {
+             if (column.isAutoIncrement()) {
+                 this.autoIncrementColumnName = column.getName();
+             }
+         }
     }
 
     public void init(TUniqueId loadId, long txnId, long dbId, long loadChannelTimeoutS)
@@ -142,6 +155,8 @@ public class OlapTableSink extends DataSink {
         TOlapTableSink tSink = new TOlapTableSink();
         tSink.setLoad_id(loadId);
         tSink.setTxn_id(txnId);
+        tSink.setNull_expr_in_auto_increment(nullExprInAutoIncrement);
+        tSink.setAuto_increment_column_name(autoIncrementColumnName);
         TransactionState txnState =
                 GlobalStateMgr.getCurrentGlobalTransactionMgr()
                         .getTransactionState(dbId, txnId);

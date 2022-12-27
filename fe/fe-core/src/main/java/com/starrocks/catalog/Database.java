@@ -510,6 +510,8 @@ public class Database extends MetaObject implements Writable {
             runnable = table.delete(isReplay);
         }
 
+        GlobalStateMgr.getCurrentState().removeAutoIncrementIdByTableId(tableId);
+
         LOG.info("finished dropping table[{}] in db[{}], tableId: {}", table.getName(), getOriginName(), tableId);
         return runnable;
     }

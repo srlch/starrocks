@@ -358,13 +358,21 @@ Status RowsetUpdateState::_prepare_partial_update_states(Tablet* tablet, Rowset*
     size_t num_default = 0;
     std::map<uint32_t, std::vector<uint32_t>> rowids_by_rssid;
     vector<uint32_t> idxes;
+    vector<uint32_t> auto_increment_idxes;
     plan_read_by_rssid(_partial_update_states[idx].src_rss_rowids, &num_default, &rowids_by_rssid, &idxes);
+    auto_increment_idxes.assign(idxes.begin(), idxes.end());
     total_rows += _partial_update_states[idx].src_rss_rowids.size();
     RETURN_IF_ERROR(
-            tablet->updates()->get_column_values(read_column_ids, num_default > 0, rowids_by_rssid, &read_columns));
+            tablet->updates()->get_column_values(read_column_ids, num_default, rowids_by_rssid, &read_columns, &auto_increment_idxes));
     for (size_t col_idx = 0; col_idx < read_column_ids.size(); col_idx++) {
-        _partial_update_states[idx].write_columns[col_idx]->append_selective(*read_columns[col_idx], idxes.data(), 0,
-                                                                             idxes.size());
+        const TabletColumn& tablet_column = tablet->tablet_schema().column(read_column_ids[col_idx]);
+        if (!tablet_column.is_auto_increment()) {
+            _partial_update_states[idx].write_columns[col_idx]->append_selective(*read_columns[col_idx], idxes.data(), 0,
+                                                                            idxes.size());
+        } else {
+            _partial_update_states[idx].write_columns[col_idx]->append_selective(*read_columns[col_idx], auto_increment_idxes.data(), 0,
+                                                                            auto_increment_idxes.size());
+        }
         _memory_usage += _partial_update_states[idx].write_columns[col_idx]->memory_usage();
     }
     int64_t t_end = MonotonicMillis();
@@ -439,15 +447,23 @@ Status RowsetUpdateState::_check_and_resolve_conflict(Tablet* tablet, Rowset* ro
         size_t num_default = 0;
         std::map<uint32_t, std::vector<uint32_t>> rowids_by_rssid;
         std::vector<uint32_t> read_idxes;
+        std::vector<uint32_t> auto_increment_read_idxes;
         plan_read_by_rssid(conflict_rowids, &num_default, &rowids_by_rssid, &read_idxes);
+        auto_increment_read_idxes.assign(read_idxes.begin(), read_idxes.end());
         DCHECK_EQ(conflict_idxes.size(), read_idxes.size());
         RETURN_IF_ERROR(
-                tablet->updates()->get_column_values(read_column_ids, num_default > 0, rowids_by_rssid, &read_columns));
+                tablet->updates()->get_column_values(read_column_ids, num_default, rowids_by_rssid, &read_columns,
+                                                     &auto_increment_read_idxes));
 
         for (size_t col_idx = 0; col_idx < read_column_ids.size(); col_idx++) {
             std::unique_ptr<Column> new_write_column =
                     _partial_update_states[segment_id].write_columns[col_idx]->clone_empty();
-            new_write_column->append_selective(*read_columns[col_idx], read_idxes.data(), 0, read_idxes.size());
+            const TabletColumn& tablet_column = tablet->tablet_schema().column(read_column_ids[col_idx]);
+            if (!tablet_column.is_auto_increment()) {
+                new_write_column->append_selective(*read_columns[col_idx], read_idxes.data(), 0, read_idxes.size());
+            } else {
+                new_write_column->append_selective(*read_columns[col_idx], auto_increment_read_idxes.data(), 0, auto_increment_read_idxes.size());
+            }
             RETURN_IF_ERROR(_partial_update_states[segment_id].write_columns[col_idx]->update_rows(
                     *new_write_column, conflict_idxes.data()));
         }

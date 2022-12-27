@@ -183,6 +183,8 @@ void run_drop_tablet_task(const std::shared_ptr<DropTabletAgentTaskRequest>& age
         StorageEngine::instance()->txn_manager()->force_rollback_tablet_related_txns(
                 dropped_tablet->data_dir()->get_meta(), drop_tablet_req.tablet_id, drop_tablet_req.schema_hash,
                 dropped_tablet->tablet_uid());
+
+        StorageEngine::instance()->remove_increment_map_by_table_id(dropped_tablet->tablet_meta()->table_id());
     }
 
     unify_finish_agent_task(status_code, error_msgs, agent_task_req->task_type, agent_task_req->signature);

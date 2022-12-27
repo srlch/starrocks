@@ -306,7 +306,7 @@ createTableStatement
      ;
 
 columnDesc
-    : identifier type charsetName? KEY? aggDesc? (NULL | NOT NULL)? defaultDesc? comment?
+    : identifier type charsetName? KEY? aggDesc? (NULL | NOT NULL)? (defaultDesc | AUTO_INCREMENT)? comment?
     ;
 
 charsetName

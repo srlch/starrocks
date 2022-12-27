@@ -63,6 +63,8 @@ public class Storage {
     public static final String IMAGE = "image";
     public static final String VERSION_FILE = "VERSION";
     public static final String ROLE_FILE = "ROLE";
+    public static final String AUTO_INCREMENT = "AUTO_INCREMENT";
+    public static final String AUTO_INCREMENT_NEW = "AUTO_INCREMENT.new";
 
     // version file props keys
     private static final String VERSION_PROP_CLUSTER_ID = "clusterId";
@@ -134,7 +136,8 @@ public class Storage {
             for (File child : children) {
                 String name = child.getName();
                 try {
-                    if (!name.equals(IMAGE_NEW) && name.startsWith(IMAGE) && name.contains(".")) {
+                    if (!name.contains(AUTO_INCREMENT) && !name.equals(IMAGE_NEW) &&
+                            name.startsWith(IMAGE) && name.contains(".")) {
                         imageJournalId =
                                 Math.max(Long.parseLong(name.substring(name.lastIndexOf('.') + 1)), imageJournalId);
                     }
@@ -277,6 +280,10 @@ public class Storage {
 
     public File getCurrentImageFile() {
         return getImageFile(imageJournalId);
+    }
+
+    public File getAutoIncrementImageFile() {
+        return new File(new File(metaDir), IMAGE + "." + AUTO_INCREMENT);
     }
 
     public File getImageFile(long version) {

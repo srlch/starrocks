@@ -377,13 +377,35 @@ public class LoadPlanner {
         return scanNode;
     }
 
+    private boolean checkNullExprInAutoIncrement() {
+        boolean nullExprInAutoIncrement = false;
+        for (ScanNode node : scanNodes) {
+            if (this.etlJobType == EtlJobType.BROKER) {
+                if (((FileScanNode) node).nullExprInAutoIncrement()) {
+                    nullExprInAutoIncrement = true;
+                }
+            } else if (this.etlJobType == EtlJobType.STREAM_LOAD || this.etlJobType == EtlJobType.ROUTINE_LOAD) {
+                if (((StreamLoadScanNode) node).nullExprInAutoIncrement()) {
+                    nullExprInAutoIncrement = true;
+                }
+            }
+
+            if (nullExprInAutoIncrement) {
+                break;
+            }
+        }
+
+        return nullExprInAutoIncrement;
+    }
+
     private void prepareSinkFragment(PlanFragment sinkFragment, List<Long> partitionIds, boolean canUsePipeLine,
                                      boolean completeTabletSink) throws UserException {
         DataSink dataSink = null;
         if (destTable instanceof OlapTable) {
             // 4. Olap table sink
             dataSink = new OlapTableSink((OlapTable) destTable, tupleDesc, partitionIds, canUsePipeLine,
-                    ((OlapTable) destTable).writeQuorum(), ((OlapTable) destTable).enableReplicatedStorage());
+                    ((OlapTable) destTable).writeQuorum(), ((OlapTable) destTable).enableReplicatedStorage(),
+                    checkNullExprInAutoIncrement());
             if (completeTabletSink) {
                 ((OlapTableSink) dataSink).init(loadId, txnId, dbId, timeoutS);
                 ((OlapTableSink) dataSink).complete();

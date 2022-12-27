@@ -251,6 +251,7 @@ public class LocalMetastore implements ConnectorMetadata {
 
     private final ConcurrentHashMap<Long, Database> idToDb = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Database> fullNameToDb = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Long> tableIdToIncrementId = new ConcurrentHashMap<>();
 
     private Cluster defaultCluster;
 
@@ -2165,6 +2166,14 @@ public class LocalMetastore implements ConnectorMetadata {
         // replicated storage
         olapTable.setEnableReplicatedStorage(
                 PropertyAnalyzer.analyzeBooleanProp(properties, PropertyAnalyzer.PROPERTIES_REPLICATED_STORAGE, false));
+
+        if (olapTable.enableReplicatedStorage().equals(false)) {
+            for (Column col : baseSchema) {
+                if (col.isAutoIncrement()) {
+                    throw new DdlException("Table with AUTO_INCREMENT column must use Replicated Storage");
+                }
+            }
+        }
 
         TTabletType tabletType = TTabletType.TABLET_TYPE_DISK;
         try {
@@ -4908,4 +4917,64 @@ public class LocalMetastore implements ConnectorMetadata {
         }
         return newPartitions;
     }
+
+    public long saveAutoIncrementId(DataOutputStream dos) throws IOException {
+        long autoInrementTableCount = tableIdToIncrementId.size();
+        long checksum = 0;
+        checksum ^= autoInrementTableCount;
+        dos.writeLong(autoInrementTableCount);
+
+        for (Map.Entry<Long, Long> entry : tableIdToIncrementId.entrySet()) {
+            Long tableId = entry.getKey();
+            Long id = entry.getValue();
+            checksum ^= tableId;
+
+            dos.writeLong(tableId);
+            dos.writeLong(id);
+        }
+        return checksum;
+    }
+
+    public long loadAutoIncrementId(DataInputStream dis) throws IOException {
+        long curChecksum = 0;
+        long autoInrementTableCount = dis.readLong();
+        curChecksum = curChecksum ^ autoInrementTableCount;
+
+        for (long i = 0; i < autoInrementTableCount; ++i) {
+            Long tableId = dis.readLong();
+            Long id = dis.readLong();
+            tableIdToIncrementId.put(tableId, id);
+
+            curChecksum ^= tableId;
+        }
+        return curChecksum;
+    }
+
+    public Long allocateAutoIncrementId(Long tableId, Long rows) {
+        Long oldId = tableIdToIncrementId.putIfAbsent(tableId, 0L);
+        if (oldId == null) {
+            oldId = tableIdToIncrementId.get(tableId);
+        }
+
+        Long newId = oldId + rows;
+        while (!tableIdToIncrementId.replace(tableId, oldId, newId)) {
+            oldId = tableIdToIncrementId.get(tableId);
+            newId = oldId + rows;
+        }
+
+        return oldId;
+    }
+
+    public void removeAutoIncrementIdByTableId(Long tableId) {
+        tableIdToIncrementId.remove(tableId);
+    }
+
+    public Long getCurrentAutoIncrementIdByTableId(Long tableId) {
+        return tableIdToIncrementId.get(tableId);
+    }
+
+    public void addAutoIncrementIdByTableId(Long tableId, Long id) {
+        tableIdToIncrementId.put(tableId, id);
+    }
 }
+

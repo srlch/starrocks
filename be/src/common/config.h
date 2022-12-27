@@ -611,6 +611,10 @@ CONF_mInt64(max_runnings_transactions_per_txn_map, "100");
 // this is a an enhancement for better performance to manage tablet.
 CONF_Int32(tablet_map_shard_size, "32");
 
+// The table auto increment shard size, the value must be power of two.
+// this is a an enhancement for better performance to allocate auto-increment value.
+CONF_Int32(table_auto_increment_shard_size, "32");
+
 CONF_String(plugin_path, "${STARROCKS_HOME}/plugin");
 
 // txn_map_lock shard size, the value is 2^n, n=0,1,2,3,4

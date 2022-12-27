@@ -47,6 +47,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <atomic>
 
 #include "agent/status.h"
 #include "common/status.h"
@@ -207,6 +208,10 @@ public:
 
     void do_manual_compact(bool force_compact);
 
+    Status get_next_increment_id_interval(int64_t tableid, size_t num_row, std::vector<int64_t> &ids);
+
+    void remove_increment_map_by_table_id(int64_t table_id);
+
 protected:
     static StorageEngine* _s_instance;
 
@@ -235,6 +240,9 @@ private:
     void _clean_unused_rowset_metas();
 
     Status _do_sweep(const std::string& scan_root, const time_t& local_tm_now, const int32_t expire);
+
+    Status _get_remote_next_increment_id_interval(const TAllocateAutoIncrementIdParam& request,
+                                                  TAllocateAutoIncrementIdResult* result);
 
     // All these xxx_callback() functions are for Background threads
     // update cache expire thread
@@ -375,6 +383,14 @@ private:
     std::unique_ptr<CompactionManager> _compaction_manager;
 
     HeartbeatFlags* _heartbeat_flags = nullptr;
+
+    std::unordered_map<int64_t, std::pair<int64_t, int64_t>*> _tableid_auto_increment_map;
+
+    int32_t _tables_auto_increment_shards_mask;
+
+    std::vector<std::mutex> *_tables_auto_increment_mutex_shards;
+
+    std::shared_mutex _auto_increment_mutex;
 
     StorageEngine(const StorageEngine&) = delete;
     const StorageEngine& operator=(const StorageEngine&) = delete;

@@ -1152,7 +1152,7 @@ Status TabletUpdates::_do_update(std::uint32_t rowset_id, std::int32_t upsert_id
             auto old_unordered_column =
                     ChunkHelper::column_from_field_type(tablet_column.type(), tablet_column.is_nullable());
             old_columns[0] = old_unordered_column->clone_empty();
-            get_column_values(read_column_ids, num_default > 0, old_rowids_by_rssid, &old_columns);
+            get_column_values(read_column_ids, num_default, old_rowids_by_rssid, &old_columns, &idxes);
             auto old_column = ChunkHelper::column_from_field_type(tablet_column.type(), tablet_column.is_nullable());
             old_column->append_selective(*old_columns[0], idxes.data(), 0, idxes.size());
 
@@ -1165,7 +1165,7 @@ Status TabletUpdates::_do_update(std::uint32_t rowset_id, std::int32_t upsert_id
             std::vector<std::unique_ptr<Column>> new_columns(1);
             auto new_column = ChunkHelper::column_from_field_type(tablet_column.type(), tablet_column.is_nullable());
             new_columns[0] = new_column->clone_empty();
-            get_column_values(read_column_ids, false, new_rowids_by_rssid, &new_columns);
+            get_column_values(read_column_ids, 0, new_rowids_by_rssid, &new_columns, &idxes);
 
             int idx_begin = 0;
             int upsert_idx_step = 0;
@@ -3285,20 +3285,35 @@ void TabletUpdates::_update_total_stats(const std::vector<uint32_t>& rowsets, si
     }
 }
 
-Status TabletUpdates::get_column_values(std::vector<uint32_t>& column_ids, bool with_default,
+Status TabletUpdates::get_column_values(std::vector<uint32_t>& column_ids, size_t num_default,
                                         std::map<uint32_t, std::vector<uint32_t>>& rowids_by_rssid,
-                                        vector<std::unique_ptr<Column>>* columns) {
+                                        vector<std::unique_ptr<Column>>* columns,
+                                        std::vector<uint32_t>* auto_increment_idxes) {
     std::map<uint32_t, RowsetSharedPtr> rssid_to_rowsets;
+    bool has_auto_increment = false;
+    std::vector<int64_t> auto_increment_ids;
+    int auto_increment_index = -1;
+
     {
         std::lock_guard<std::mutex> l(_rowsets_lock);
         for (const auto& rowset : _rowsets) {
             rssid_to_rowsets.insert(rowset);
         }
     }
-    if (with_default) {
+    if (num_default > 0) {
         for (auto i = 0; i < column_ids.size(); ++i) {
             const TabletColumn& tablet_column = _tablet.tablet_schema().column(column_ids[i]);
-            if (tablet_column.has_default_value()) {
+            if (tablet_column.is_auto_increment()) {
+                has_auto_increment = true;
+                auto_increment_index = i;
+                auto_increment_ids.resize(num_default);
+
+                int64_t table_id = _tablet.tablet_meta()->table_id();
+                RETURN_IF_ERROR(StorageEngine::instance()->get_next_increment_id_interval(table_id, num_default, auto_increment_ids));
+
+                // append the first auto increment id
+                dynamic_cast<Int64Column*>((*columns)[i].get())->append(auto_increment_ids[0]);
+            } else if (tablet_column.has_default_value()) {
                 const TypeInfoPtr& type_info = get_type_info(tablet_column);
                 std::unique_ptr<DefaultValueColumnIterator> default_value_iter =
                         std::make_unique<DefaultValueColumnIterator>(
@@ -3351,6 +3366,34 @@ Status TabletUpdates::get_column_values(std::vector<uint32_t>& column_ids, bool 
             RETURN_IF_ERROR(col_iter->init(iter_opts));
             RETURN_IF_ERROR(col_iter->fetch_values_by_rowid(rowids.data(), rowids.size(), (*columns)[i].get()));
         }
+    }
+
+    // append remain auto increment id in corresponding column
+    // and reset auto_increment_idxes
+    if (auto_increment_idxes != nullptr && has_auto_increment && num_default > 1) {
+        DCHECK_NE(auto_increment_index, -1);
+        DCHECK_EQ(auto_increment_ids.size(), num_default);
+
+        size_t last = (*columns)[auto_increment_index]->size() - 1;
+
+        for (auto i = 1; i < auto_increment_ids.size(); ++i) {
+            dynamic_cast<Int64Column*>((*columns)[auto_increment_index].get())->append(auto_increment_ids[i]);
+        }
+
+        // skip first zero element
+        bool skip = false;
+        for (size_t i = 0; i < auto_increment_idxes->size(); ++i) {
+            if ((*auto_increment_idxes)[i] == 0) {
+                if (!skip) {
+                    skip = true;
+                    continue;
+                }
+
+                last++;
+                (*auto_increment_idxes)[i] = last;
+            }
+        }
+        DCHECK_EQ(last, (*columns)[auto_increment_index]->size() - 1);
     }
     return Status::OK();
 }

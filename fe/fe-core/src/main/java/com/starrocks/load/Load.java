@@ -368,7 +368,7 @@ public class Load {
                     continue;
                 }
                 Column.DefaultValueType defaultValueType = column.getDefaultValueType();
-                if (defaultValueType == Column.DefaultValueType.NULL && !column.isAllowNull()) {
+                if (defaultValueType == Column.DefaultValueType.NULL && !column.isAllowNull() && !column.isAutoIncrement()) {
                     throw new DdlException("Column has no default value. column: " + columnName);
                 }
             }

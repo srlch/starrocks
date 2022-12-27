@@ -66,6 +66,9 @@ public class MetaCleaner {
                     continue;
                 }
                 String filename = file.getName();
+                if (filename.contains("AUTO_INCREMENT")) {
+                    continue;
+                }
                 // Delete all image whose version is less than imageVersionDelete
                 if (type.equalsIgnoreCase(Storage.IMAGE)) {
                     if (filename.endsWith(".part")) {
