@@ -95,6 +95,7 @@ import com.starrocks.mysql.privilege.PrivPredicate;
 import com.starrocks.mysql.privilege.Privilege;
 import com.starrocks.mysql.privilege.TablePrivEntry;
 import com.starrocks.mysql.privilege.UserPrivTable;
+import com.starrocks.persist.AutoIncrementInfo;
 import com.starrocks.planner.StreamLoadPlanner;
 import com.starrocks.privilege.PrivilegeManager;
 import com.starrocks.privilege.PrivilegeType;
@@ -215,12 +216,12 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.thrift.TException;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -1480,8 +1481,12 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         TAllocateAutoIncrementIdResult result = new TAllocateAutoIncrementIdResult();
         Long nextId = GlobalStateMgr.getCurrentState().allocateAutoIncrementId(request.table_id, request.rows);
         try {
-            GlobalStateMgr.getCurrentState().saveAutoIncrementImage();
-        } catch (IOException e) {
+            // log the delta result.
+            ConcurrentHashMap<Long, Long> deltaMap = new ConcurrentHashMap<>();
+            deltaMap.put(request.table_id, nextId + request.rows);
+            AutoIncrementInfo info = new AutoIncrementInfo(deltaMap);
+            GlobalStateMgr.getCurrentState().getEditLog().logSaveAutoIncrementId(info);
+        } catch (Exception e) {
             result.setAuto_increment_id(0);
             result.setAllocated_rows(0);
 

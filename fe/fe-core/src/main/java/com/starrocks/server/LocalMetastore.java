@@ -124,6 +124,7 @@ import com.starrocks.lake.StorageInfo;
 import com.starrocks.meta.MetaContext;
 import com.starrocks.persist.AddPartitionsInfo;
 import com.starrocks.persist.AddPartitionsInfoV2;
+import com.starrocks.persist.AutoIncrementInfo;
 import com.starrocks.persist.BackendIdsUpdateInfo;
 import com.starrocks.persist.BackendTabletsInfo;
 import com.starrocks.persist.ColocatePersistInfo;
@@ -260,6 +261,8 @@ public class LocalMetastore implements ConnectorMetadata {
     private final CatalogRecycleBin recycleBin;
     private ColocateTableIndex colocateTableIndex;
     private final SystemInfoService systemInfoService;
+    public static boolean autoIncrementInit = false;
+    public static boolean autoIncrementReplay = false;
 
     public LocalMetastore(GlobalStateMgr globalStateMgr, CatalogRecycleBin recycleBin,
                           ColocateTableIndex colocateTableIndex, SystemInfoService systemInfoService) {
@@ -4918,36 +4921,49 @@ public class LocalMetastore implements ConnectorMetadata {
         return newPartitions;
     }
 
-    public long saveAutoIncrementId(DataOutputStream dos) throws IOException {
-        long autoInrementTableCount = tableIdToIncrementId.size();
-        long checksum = 0;
-        checksum ^= autoInrementTableCount;
-        dos.writeLong(autoInrementTableCount);
+    public long saveAutoIncrementId(DataOutputStream dos, long checksum) throws IOException {
+        AutoIncrementInfo info = new AutoIncrementInfo(tableIdToIncrementId);
+        info.write(dos);
+        return checksum;
+    }
 
-        for (Map.Entry<Long, Long> entry : tableIdToIncrementId.entrySet()) {
-            Long tableId = entry.getKey();
-            Long id = entry.getValue();
-            checksum ^= tableId;
+    public long loadAutoIncrementId(DataInputStream dis, long checksum) throws IOException {
+        AutoIncrementInfo info = new AutoIncrementInfo(null);
+        info.read(dis);
+        // do the actually update when fe start.
+        if (!autoIncrementInit) {
+            for (Map.Entry<Long, Long> entry : info.tableIdToIncrementId().entrySet()) {
+                Long tableId = entry.getKey();
+                Long id = entry.getValue();
 
-            dos.writeLong(tableId);
-            dos.writeLong(id);
+                tableIdToIncrementId.put(tableId, id);
+            }
         }
         return checksum;
     }
 
-    public long loadAutoIncrementId(DataInputStream dis) throws IOException {
-        long curChecksum = 0;
-        long autoInrementTableCount = dis.readLong();
-        curChecksum = curChecksum ^ autoInrementTableCount;
+    public void replayAutoIncrementId(AutoIncrementInfo info) throws IOException {
+        // replay when fe start.
+        if (!autoIncrementReplay) {
+            for (Map.Entry<Long, Long> entry : info.tableIdToIncrementId().entrySet()) {
+                Long tableId = entry.getKey();
+                Long id = entry.getValue();
 
-        for (long i = 0; i < autoInrementTableCount; ++i) {
-            Long tableId = dis.readLong();
-            Long id = dis.readLong();
-            tableIdToIncrementId.put(tableId, id);
+                Long oldId = tableIdToIncrementId.putIfAbsent(tableId, id);
 
-            curChecksum ^= tableId;
+                if (oldId != null && id > tableIdToIncrementId.get(tableId)) {
+                    tableIdToIncrementId.replace(tableId, id);
+                }
+            }
         }
-        return curChecksum;
+    }
+
+    public void setAutoIncrementReplay() {
+        autoIncrementReplay = true;
+    }
+
+    public void setAutoIncrementInit() {
+        autoIncrementInit = true;
     }
 
     public Long allocateAutoIncrementId(Long tableId, Long rows) {
@@ -4967,6 +4983,10 @@ public class LocalMetastore implements ConnectorMetadata {
 
     public void removeAutoIncrementIdByTableId(Long tableId) {
         tableIdToIncrementId.remove(tableId);
+    }
+
+    public ConcurrentHashMap<Long, Long> tableIdToIncrementId() {
+        return tableIdToIncrementId;
     }
 
     public Long getCurrentAutoIncrementIdByTableId(Long tableId) {
