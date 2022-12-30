@@ -66,6 +66,8 @@ public class BackupMeta implements Writable, GsonPostProcessable {
     private Map<Long, Table> tblIdMap = Maps.newHashMap();
     // id -> auto increment id
     private Map<Long, Long> tblAutoIncrementIdMap = Maps.newHashMap();
+    // tblNameMap cp used for auto increment recover
+    private Map<String, Table> tblNameMapDummy = Maps.newHashMap();
 
     private BackupMeta() {
 
@@ -87,18 +89,28 @@ public class BackupMeta implements Writable, GsonPostProcessable {
     }
 
     public void checkAndRecoverAutoIncrementId(Table tbl) {
-        String name = tbl.getName();
+        String tblName = tbl.getName();
+        Long oldId = tblNameMapDummy.get(tblName).getId();
+        Long newId = tbl.getId();
 
         // table id maybe different from the backp one,
         // so we should get the oldId and acquire the 
         // autoIncrementId from backuped tblAutoIncrementIdMap
         // and register the <newid, autoIncrementId> in global map.
-        Table oldTbl = tblNameMap.get(name);
-        Long autoIncrementId = tblAutoIncrementIdMap.get(oldTbl.getId());
+        Long autoIncrementId = tblAutoIncrementIdMap.get(oldId);
 
         if (autoIncrementId != null) {
-            Long tableId = tbl.getId();
-            GlobalStateMgr.getCurrentState().addAutoIncrementIdByTableId(tableId, autoIncrementId);
+            GlobalStateMgr.getCurrentState().addOrReplaceAutoIncrementIdByTableId(newId, autoIncrementId);
+        }
+    }
+
+    public void makeDummyMap() {
+        for (Map.Entry<String, Table> entry : tblNameMap.entrySet()) {
+            String name = new String(entry.getKey());
+
+            Table oldTbl = entry.getValue();
+            Table tbl = new Table(oldTbl.getId(), oldTbl.getName(), oldTbl.getType(), oldTbl.getFullSchema());
+            tblNameMapDummy.put(name, tbl);
         }
     }
 

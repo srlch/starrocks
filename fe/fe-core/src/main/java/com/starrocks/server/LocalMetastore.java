@@ -4993,8 +4993,11 @@ public class LocalMetastore implements ConnectorMetadata {
         return tableIdToIncrementId.get(tableId);
     }
 
-    public void addAutoIncrementIdByTableId(Long tableId, Long id) {
-        tableIdToIncrementId.put(tableId, id);
+    public void addOrReplaceAutoIncrementIdByTableId(Long tableId, Long id) {
+        Long oldId = tableIdToIncrementId.putIfAbsent(tableId, id);
+        if (oldId != null) {
+            tableIdToIncrementId.replace(tableId, id);
+        }
     }
 }
 

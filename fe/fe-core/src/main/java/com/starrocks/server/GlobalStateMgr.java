@@ -3350,8 +3350,8 @@ public class GlobalStateMgr {
         return localMetastore.getCurrentAutoIncrementIdByTableId(tableId);
     }
 
-    public void addAutoIncrementIdByTableId(Long tableId, Long id) {
-        localMetastore.addAutoIncrementIdByTableId(tableId, id);
+    public void addOrReplaceAutoIncrementIdByTableId(Long tableId, Long id) {
+        localMetastore.addOrReplaceAutoIncrementIdByTableId(tableId, id);
     }
 
     public void installPlugin(InstallPluginStmt stmt) throws UserException, IOException {
