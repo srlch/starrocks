@@ -183,8 +183,6 @@ void run_drop_tablet_task(const std::shared_ptr<DropTabletAgentTaskRequest>& age
         StorageEngine::instance()->txn_manager()->force_rollback_tablet_related_txns(
                 dropped_tablet->data_dir()->get_meta(), drop_tablet_req.tablet_id, drop_tablet_req.schema_hash,
                 dropped_tablet->tablet_uid());
-
-        StorageEngine::instance()->remove_increment_map_by_table_id(dropped_tablet->tablet_meta()->table_id());
     }
 
     unify_finish_agent_task(status_code, error_msgs, agent_task_req->task_type, agent_task_req->signature);
@@ -716,6 +714,23 @@ void run_update_meta_info_task(const std::shared_ptr<UpdateTabletMetaInfoAgentTa
 
     LOG(INFO) << "finish update tablet meta task. signature:" << agent_task_req->signature;
 
+    unify_finish_agent_task(status_code, error_msgs, agent_task_req->task_type, agent_task_req->signature);
+}
+
+AgentStatus drop_auto_increment_map(TTableId table_id) {
+    StorageEngine::instance()->remove_increment_map_by_table_id(table_id);
+    return STARROCKS_SUCCESS;
+}
+
+void run_drop_auto_increment_map_task(const std::shared_ptr<DropAutoIncrementMapAgentTaskRequest>& agent_task_req, ExecEnv* exec_env) {
+    const TDropAutoIncrementMapReq& drop_auto_increment_map_req = agent_task_req->task_req;
+    LOG(INFO) << "drop auto increment map task tableid=" << drop_auto_increment_map_req.table_id;
+
+    TStatusCode::type status_code = TStatusCode::OK;
+    std::vector<std::string> error_msgs;
+
+    drop_auto_increment_map(drop_auto_increment_map_req.table_id);
+    LOG(INFO) << "drop auto increment map task success, tableid=" << drop_auto_increment_map_req.table_id;
     unify_finish_agent_task(status_code, error_msgs, agent_task_req->task_type, agent_task_req->signature);
 }
 
