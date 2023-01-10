@@ -257,9 +257,6 @@ public:
     void to_rowset_meta_pb(const std::vector<RowsetMetaSharedPtr>& rowset_metas,
                            std::vector<RowsetMetaPB>& rowset_metas_pb);
 
-    Status index_probe(Tablet* tablet, const ColumnUniquePtr& upsert,
-                       std::vector<uint64_t>* rss_rowids);
-
 private:
     friend class Tablet;
     friend class PrimaryIndex;

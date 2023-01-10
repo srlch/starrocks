@@ -89,7 +89,7 @@ Status SegmentRewriter::rewrite(const std::string& src_path, const std::string& 
     }
     VectorizedSchema src_schema = ChunkHelper::convert_schema_to_format_v2(tschema, src_column_ids);
 
-    auto_increment_partial_update_state.rowset->load();
+    rowset->load();
 
     auto chunk_shared_ptr = ChunkHelper::new_chunk(src_schema, num_rows);
     auto read_chunk = chunk_shared_ptr.get();

@@ -578,7 +578,7 @@ Status DeltaWriter::_fill_auto_increment_id(const Chunk& chunk) {
     std::vector<uint64_t> rss_rowids;
     rss_rowids.resize(upserts->size());
 
-    _tablet->updates()->index_probe(_tablet.get(), upserts, &rss_rowids);
+    _tablet->updates()->prepare_partial_update_states(_tablet.get(), upserts, nullptr, &rss_rowids);
 
     std::vector<uint8_t> filter;
     uint32_t gen_num = 0;

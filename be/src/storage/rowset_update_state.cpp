@@ -431,6 +431,9 @@ Status RowsetUpdateState::_prepare_auto_increment_partial_update_states(Tablet* 
                 ++last;
             }
         }
+    } else {
+        _auto_increment_partial_update_states[idx].skip_rewrite = true;
+        return Status::OK();
     }
 
     RETURN_IF_ERROR(
@@ -562,14 +565,15 @@ Status RowsetUpdateState::apply(Tablet* tablet, Rowset* rowset, uint32_t rowset_
 
     if (txn_meta.auto_increment_partial_update_column_id() != -1) {
         uint32_t id = txn_meta.auto_increment_partial_update_column_id();
-        _prepare_auto_increment_partial_update_states(tablet, rowset, segment_id, std::vector<uint32_t>(1, id));
+        RETURN_IF_ERROR(_prepare_auto_increment_partial_update_states(tablet, rowset, segment_id, std::vector<uint32_t>(1, id)));
     }
 
     auto src_path = Rowset::segment_file_path(tablet->schema_hash_path(), rowset->rowset_id(), segment_id);
     auto dest_path = Rowset::segment_temp_file_path(tablet->schema_hash_path(), rowset->rowset_id(), segment_id);
     DeferOp clean_temp_files([&] { FileSystem::Default()->delete_file(dest_path); });
     int64_t t_rewrite_start = MonotonicMillis();
-    if (txn_meta.auto_increment_partial_update_column_id() != -1) {
+    if (txn_meta.auto_increment_partial_update_column_id() != -1 &&
+        !(_partial_update_states.size() == 0 && _auto_increment_partial_update_states[segment_id].skip_rewrite)) {
         RETURN_IF_ERROR(SegmentRewriter::rewrite(src_path, dest_path, tablet->tablet_schema(), _auto_increment_partial_update_states[segment_id],
                                                 read_column_ids, _partial_update_states.size() != 0 ? &_partial_update_states[segment_id].write_columns :
                                                 nullptr));

@@ -3433,20 +3433,6 @@ Status TabletUpdates::prepare_partial_update_states_unlock(Tablet* tablet, const
     return Status::OK();
 }
 
-Status TabletUpdates::index_probe(Tablet* tablet, const ColumnUniquePtr& upsert,
-                                  std::vector<uint64_t>* rss_rowids) {
-    std::lock_guard lg(_index_lock);
-    auto manager = StorageEngine::instance()->update_manager();
-    auto index_entry = manager->index_cache().get_or_create(tablet->tablet_id());
-    index_entry->update_expire_time(MonotonicMillis() + manager->get_cache_expire_ms());
-    auto& index = index_entry->value();
-    auto st = index.load(tablet);
-
-    index.get(*upsert, rss_rowids);
-
-    return Status::OK();
-}
-
 Status TabletUpdates::get_missing_version_ranges(std::vector<int64_t>& missing_version_ranges) {
     // usually, version ranges will have no hole or 1 hole(3 elements in ranges array)
     missing_version_ranges.reserve(3);
