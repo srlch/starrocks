@@ -92,6 +92,11 @@ message RowsetTxnMetaPB {
     repeated FooterPointerPB partial_rowset_footers = 3;
 
     optional string merge_condition = 4;
+
+    // one for each segment
+    repeated FooterPointerPB auto_increment_partial_rowset_footers = 5;
+
+    optional int32 auto_increment_partial_update_column_id = 6;
 }
 
 message RowsetMetaPB {

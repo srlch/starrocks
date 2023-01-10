@@ -128,8 +128,10 @@ Status RowsetWriter::init() {
     _writer_options.referenced_column_ids = _context.referenced_column_ids;
 
     if (_context.tablet_schema->keys_type() == KeysType::PRIMARY_KEYS &&
-        (_context.partial_update_tablet_schema || !_context.merge_condition.empty())) {
+        (_context.partial_update_tablet_schema || !_context.merge_condition.empty() ||
+         _context.miss_auto_increment_column_id)) {
         _rowset_txn_meta_pb = std::make_unique<RowsetTxnMetaPB>();
+        _rowset_txn_meta_pb->set_auto_increment_partial_update_column_id(-1);
     }
 
     ASSIGN_OR_RETURN(_fs, FileSystem::CreateSharedFromString(_context.rowset_path_prefix));
@@ -172,9 +174,27 @@ StatusOr<RowsetSharedPtr> RowsetWriter::build() {
             if (!_context.merge_condition.empty()) {
                 _rowset_txn_meta_pb->set_merge_condition(_context.merge_condition);
             }
+            if (_context.miss_auto_increment_column_id) {
+                for (auto i = 0; i < _context.tablet_schema->num_columns(); ++i) {
+                    auto col = _context.tablet_schema->column(i);
+                    if (col.is_auto_increment()) {
+                        _rowset_txn_meta_pb->set_auto_increment_partial_update_column_id(i);
+                        break;
+                    }
+                }
+            }
             *_rowset_meta_pb->mutable_txn_meta() = *_rowset_txn_meta_pb;
         } else if (!_context.merge_condition.empty()) {
             _rowset_txn_meta_pb->set_merge_condition(_context.merge_condition);
+            *_rowset_meta_pb->mutable_txn_meta() = *_rowset_txn_meta_pb;
+        } else if (_context.miss_auto_increment_column_id) {
+            for (auto i = 0; i < _context.tablet_schema->num_columns(); ++i) {
+                auto col = _context.tablet_schema->column(i);
+                if (col.is_auto_increment()) {
+                    _rowset_txn_meta_pb->set_auto_increment_partial_update_column_id(i);
+                    break;
+                }
+            }
             *_rowset_meta_pb->mutable_txn_meta() = *_rowset_txn_meta_pb;
         }
     } else {
@@ -232,6 +252,12 @@ Status RowsetWriter::flush_segment(const SegmentPB& segment_pb, butil::IOBuf& da
             auto* partial_rowset_footer = _rowset_txn_meta_pb->add_partial_rowset_footers();
             partial_rowset_footer->set_position(segment_pb.partial_footer_position());
             partial_rowset_footer->set_size(segment_pb.partial_footer_size());
+        }
+
+        if (_context.tablet_schema->keys_type() == KeysType::PRIMARY_KEYS && _context.miss_auto_increment_column_id) {
+            auto* auto_increment_partial_rowset_footer = _rowset_txn_meta_pb->add_auto_increment_partial_rowset_footers();
+            auto_increment_partial_rowset_footer->set_position(segment_pb.auto_increment_partial_footer_position());
+            auto_increment_partial_rowset_footer->set_size(segment_pb.auto_increment_partial_footer_size());
         }
 
         // 3. update statistic
@@ -873,6 +899,16 @@ Status HorizontalRowsetWriter::_flush_segment_writer(std::unique_ptr<SegmentWrit
         if (seg_info) {
             seg_info->set_partial_footer_position(footer_position);
             seg_info->set_partial_footer_size(footer_size);
+        }
+    }
+    if (_context.tablet_schema->keys_type() == KeysType::PRIMARY_KEYS && _context.miss_auto_increment_column_id) {
+        uint64_t footer_size = segment_size - footer_position;
+        auto* auto_increment_partial_rowset_footer = _rowset_txn_meta_pb->add_auto_increment_partial_rowset_footers();
+        auto_increment_partial_rowset_footer->set_position(footer_position);
+        auto_increment_partial_rowset_footer->set_size(footer_size);
+        if (seg_info) {
+            seg_info->set_auto_increment_partial_footer_position(footer_position);
+            seg_info->set_auto_increment_partial_footer_size(footer_size);
         }
     }
     {

@@ -184,6 +184,7 @@ struct TOlapTableSink {
     20: optional string merge_condition
     21: optional bool null_expr_in_auto_increment
     22: optional string auto_increment_column_name
+    23: optional bool miss_auto_increment_column
 }
 
 struct TDataSink {

@@ -124,6 +124,8 @@ public class OlapTableSink extends DataSink {
 
     private String autoIncrementColumnName;
 
+    private boolean missAutoIncrementColumn;
+
     public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds,
             TWriteQuorumType writeQuorum, boolean enableReplicatedStorage, boolean nullExprInAutoIncrement) {
         this(dstTable, tupleDescriptor, partitionIds, true, writeQuorum, enableReplicatedStorage, nullExprInAutoIncrement);
@@ -141,6 +143,7 @@ public class OlapTableSink extends DataSink {
         this.writeQuorum = writeQuorum;
         this.enableReplicatedStorage = enableReplicatedStorage;
         this.nullExprInAutoIncrement = nullExprInAutoIncrement;
+        this.missAutoIncrementColumn = false;
 
         this.autoIncrementColumnName = null;
          for (Column column : dstTable.getBaseSchema()) {
@@ -148,6 +151,8 @@ public class OlapTableSink extends DataSink {
                  this.autoIncrementColumnName = column.getName();
              }
          }
+
+         this.missAutoIncrementColumn = false;
     }
 
     public void init(TUniqueId loadId, long txnId, long dbId, long loadChannelTimeoutS)
@@ -157,6 +162,7 @@ public class OlapTableSink extends DataSink {
         tSink.setTxn_id(txnId);
         tSink.setNull_expr_in_auto_increment(nullExprInAutoIncrement);
         tSink.setAuto_increment_column_name(autoIncrementColumnName);
+        tSink.setMiss_auto_increment_column(missAutoIncrementColumn);
         TransactionState txnState =
                 GlobalStateMgr.getCurrentGlobalTransactionMgr()
                         .getTransactionState(dbId, txnId);
@@ -179,6 +185,10 @@ public class OlapTableSink extends DataSink {
                 ErrorReport.reportAnalysisException(ErrorCode.ERR_UNKNOWN_PARTITION, partitionId, dstTable.getName());
             }
         }
+    }
+
+    public void setMissAutoIncrementColumn() {
+        this.missAutoIncrementColumn = true;
     }
 
     public void updateLoadId(TUniqueId newLoadId) {

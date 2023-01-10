@@ -463,6 +463,8 @@ private:
 
     bool _null_expr_in_auto_increment = false;
 
+    bool _miss_auto_increment_column = false;
+
     std::string _auto_increment_column_name;
 };
 

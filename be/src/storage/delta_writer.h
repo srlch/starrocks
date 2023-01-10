@@ -61,6 +61,7 @@ struct DeltaWriterOptions {
     WriteQuorumTypePB write_quorum;
     std::string merge_condition;
     ReplicaState replica_state;
+    bool miss_auto_increment_column;
 };
 
 enum State {
@@ -148,6 +149,7 @@ private:
     Status _flush_memtable();
     const char* _state_name(State state) const;
     const char* _replica_state_name(ReplicaState state) const;
+    Status _fill_auto_increment_id(const Chunk& chunk);
 
     void _garbage_collection();
 

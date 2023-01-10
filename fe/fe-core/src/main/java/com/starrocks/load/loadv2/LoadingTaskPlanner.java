@@ -170,7 +170,8 @@ public class LoadingTaskPlanner {
                 if (fileGroups.get(0).isNegative()) {
                     throw new DdlException("Primary key table does not support negative load");
                 }
-                destColumns = Load.getPartialUpateColumns(table, fileGroups.get(0).getColumnExprList());
+                boolean test = false;
+                destColumns = Load.getPartialUpateColumns(table, fileGroups.get(0).getColumnExprList(), test);
             } else {
                 throw new DdlException("filegroup number=" + fileGroups.size() + " is illegal");
             }

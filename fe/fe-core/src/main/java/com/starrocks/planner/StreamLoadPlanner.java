@@ -97,10 +97,13 @@ public class StreamLoadPlanner {
     private Analyzer analyzer;
     private DescriptorTable descTable;
 
+    private boolean missAutoIncrementColumn;
+
     public StreamLoadPlanner(Database db, OlapTable destTable, StreamLoadInfo streamLoadInfo) {
         this.db = db;
         this.destTable = destTable;
         this.streamLoadInfo = streamLoadInfo;
+        this.missAutoIncrementColumn = false;
     }
 
     private void resetAnalyzer() {
@@ -132,7 +135,7 @@ public class StreamLoadPlanner {
         List<Pair<Integer, ColumnDict>> globalDicts = Lists.newArrayList();
         List<Column> destColumns;
         if (streamLoadInfo.isPartialUpdate()) {
-            destColumns = Load.getPartialUpateColumns(destTable, streamLoadInfo.getColumnExprDescs());
+            destColumns = Load.getPartialUpateColumns(destTable, streamLoadInfo.getColumnExprDescs(), this.missAutoIncrementColumn);
         } else {
             destColumns = destTable.getFullSchema();
         }
@@ -175,6 +178,9 @@ public class StreamLoadPlanner {
         List<Long> partitionIds = getAllPartitionIds();
         OlapTableSink olapTableSink = new OlapTableSink(destTable, tupleDesc, partitionIds, writeQuorum,
                 destTable.enableReplicatedStorage(), scanNode.nullExprInAutoIncrement());
+        if (this.missAutoIncrementColumn) {
+            olapTableSink.setMissAutoIncrementColumn();
+        }
         olapTableSink.init(loadId, streamLoadInfo.getTxnId(), db.getId(), streamLoadInfo.getTimeout());
         Load.checkMergeCondition(streamLoadInfo.getMergeConditionStr(), destTable);
         olapTableSink.complete(streamLoadInfo.getMergeConditionStr());

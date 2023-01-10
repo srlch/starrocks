@@ -84,6 +84,8 @@ public:
     RowsetWriterType writer_type = kHorizontal;
 
     std::string merge_condition;
+
+    bool miss_auto_increment_column_id = false;
 };
 
 } // namespace starrocks

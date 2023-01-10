@@ -22,6 +22,7 @@
 #include "storage/memtable.h"
 #include "storage/memtable_flush_executor.h"
 #include "storage/memtable_rowset_writer_sink.h"
+#include "storage/primary_key_encoder.h"
 #include "storage/rowset/rowset_factory.h"
 #include "storage/segment_replicate_executor.h"
 #include "storage/storage_engine.h"
@@ -236,6 +237,7 @@ Status DeltaWriter::_init() {
     writer_context.load_id = _opt.load_id;
     writer_context.segments_overlap = OVERLAPPING;
     writer_context.global_dicts = _opt.global_dicts;
+    writer_context.miss_auto_increment_column_id = _opt.miss_auto_increment_column;
     Status st = RowsetFactory::create_rowset_writer(writer_context, &_rowset_writer);
     if (!st.ok()) {
         auto msg = strings::Substitute("Fail to create rowset writer. tablet_id: $0, error: $1", _opt.tablet_id,
@@ -298,6 +300,11 @@ Status DeltaWriter::write(const Chunk& chunk, const uint32_t* indexes, uint32_t 
         return Status::InternalError(fmt::format("Fail to write chunk, tablet_id: {}, replica_state: {}",
                                                  _opt.tablet_id, _replica_state_name(_replica_state)));
     }
+
+    if (_opt.miss_auto_increment_column) {
+        RETURN_IF_ERROR(_fill_auto_increment_id(chunk));
+    }
+
     Status st;
     bool full = _mem_table->insert(chunk, indexes, from, size);
     if (_mem_tracker->limit_exceeded()) {
@@ -550,6 +557,56 @@ const char* DeltaWriter::_replica_state_name(ReplicaState state) const {
         return "Peer Replica";
     }
     return "";
+}
+
+Status DeltaWriter::_fill_auto_increment_id(const Chunk& chunk) {
+    // probe index
+    vector<uint32_t> pk_columns;
+    for (size_t i = 0; i < _tablet_schema->num_key_columns(); i++) {
+        pk_columns.push_back((uint32_t)i);
+    }
+    VectorizedSchema pkey_schema = ChunkHelper::convert_schema_to_format_v2(*_tablet_schema, pk_columns);
+    std::unique_ptr<Column> pk_column;
+    if (!PrimaryKeyEncoder::create_column(pkey_schema, &pk_column).ok()) {
+        CHECK(false) << "create column for primary key encoder failed";
+    }
+    auto col = pk_column->clone();
+    
+    PrimaryKeyEncoder::encode(pkey_schema, chunk, 0, chunk.num_rows(), col.get());
+    std::unique_ptr<Column> upserts = std::move(col);
+
+    std::vector<uint64_t> rss_rowids;
+    rss_rowids.resize(upserts->size());
+
+    _tablet->updates()->index_probe(_tablet.get(), upserts, &rss_rowids);
+
+    std::vector<uint8_t> filter;
+    uint32_t gen_num = 0;
+    for (uint32_t i = 0; i < rss_rowids.size(); i++) {
+        uint64_t v = rss_rowids[i];
+        uint32_t rssid = v >> 32;
+        if (rssid == (uint32_t)-1) {
+            filter.emplace_back(1);
+            ++gen_num;
+        } else {
+            filter.emplace_back(0);
+        }
+    }
+
+    std::vector<int64_t> ids(gen_num);
+    int64_t table_id = _tablet->tablet_meta()->table_id();
+    RETURN_IF_ERROR(StorageEngine::instance()->get_next_increment_id_interval(table_id, gen_num, ids));
+
+    for (int i = 0; i < _vectorized_schema.num_fields(); i++) {
+        const TabletColumn& tablet_column = _tablet_schema->column(i);
+        if (tablet_column.is_auto_increment()) {
+            auto& column = chunk.get_column_by_index(i);
+            RETURN_IF_ERROR((std::dynamic_pointer_cast<Int64Column>(column))->fill_range(ids, filter));
+            break;
+        }
+    }
+
+    return Status::OK();
 }
 
 } // namespace starrocks

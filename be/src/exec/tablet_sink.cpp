@@ -191,6 +191,7 @@ void NodeChannel::_open(int64_t index_id, RefCountClosure<PTabletWriterOpenResul
     request.set_is_replicated_storage(_parent->_enable_replicated_storage);
     request.set_node_id(_node_id);
     request.set_write_quorum(_write_quorum_type);
+    request.set_miss_auto_increment_column(_parent->_miss_auto_increment_column);
     for (auto& tablet : _index_tablets_map[index_id]) {
         auto ptablet = request.add_tablets();
         ptablet->Swap(&tablet);
@@ -817,6 +818,7 @@ Status OlapTableSink::init(const TDataSink& t_sink, RuntimeState* state) {
     _keys_type = table_sink.keys_type;
     _null_expr_in_auto_increment = table_sink.null_expr_in_auto_increment;
     _auto_increment_column_name = table_sink.auto_increment_column_name;
+    _miss_auto_increment_column = table_sink.miss_auto_increment_column;
     if (table_sink.__isset.write_quorum_type) {
         _write_quorum_type = table_sink.write_quorum_type;
     }
@@ -1386,7 +1388,12 @@ Status OlapTableSink::_fill_auto_increment_id_internal(Chunk* chunk, SlotDescrip
     switch (slot->type().type) {
     case TYPE_BIGINT: {
         std::vector<int64_t> ids(null_rows);
-        RETURN_IF_ERROR(StorageEngine::instance()->get_next_increment_id_interval(table_id, null_rows, ids));
+        if (!_miss_auto_increment_column) {
+            RETURN_IF_ERROR(StorageEngine::instance()->get_next_increment_id_interval(table_id, null_rows, ids));
+        } else {
+            // auto increment id will be allocate in DeltaWriter
+            ids.assign(null_rows, 0);
+        }
         RETURN_IF_ERROR((std::dynamic_pointer_cast<Int64Column>(data_col))->fill_range(ids, filter));
         break;
     }

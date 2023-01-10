@@ -242,10 +242,11 @@ public class LoadPlanner {
             throw new DdlException("Only primary key table support partial update");
         }
         if (partialUpdate) {
+            boolean test = false;
             if (this.etlJobType == EtlJobType.BROKER) {
-                destColumns = Load.getPartialUpateColumns(destTable, fileGroups.get(0).getColumnExprList());
+                destColumns = Load.getPartialUpateColumns(destTable, fileGroups.get(0).getColumnExprList(), test);
             } else {
-                destColumns = Load.getPartialUpateColumns(destTable, columnDescs);
+                destColumns = Load.getPartialUpateColumns(destTable, columnDescs, test);
             }
         } else {
             destColumns = destTable.getFullSchema();

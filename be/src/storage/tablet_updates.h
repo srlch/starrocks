@@ -234,10 +234,9 @@ public:
     //          column 2 value@rssid:6 rowid:4,
     //   ]
     // ]
-    Status get_column_values(std::vector<uint32_t>& column_ids, size_t num_default,
+    Status get_column_values(std::vector<uint32_t>& column_ids, bool with_default,
                              std::map<uint32_t, std::vector<uint32_t>>& rowids_by_rssid,
-                             vector<std::unique_ptr<Column>>* columns,
-                             std::vector<uint32_t>* auto_increment_idxes);
+                             vector<std::unique_ptr<Column>>* columns, void* state);
 
     /*
     Status prepare_partial_update_states(Tablet* tablet, const std::vector<ColumnUniquePtr>& upserts,
@@ -257,6 +256,9 @@ public:
 
     void to_rowset_meta_pb(const std::vector<RowsetMetaSharedPtr>& rowset_metas,
                            std::vector<RowsetMetaPB>& rowset_metas_pb);
+
+    Status index_probe(Tablet* tablet, const ColumnUniquePtr& upsert,
+                       std::vector<uint64_t>* rss_rowids);
 
 private:
     friend class Tablet;
