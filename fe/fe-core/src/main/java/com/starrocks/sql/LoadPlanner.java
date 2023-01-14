@@ -128,6 +128,8 @@ public class LoadPlanner {
     // Routine load related structs
     TRoutineLoadTask routineLoadTask;
 
+    private Boolean missAutoIncrementColumn = Boolean.FALSE;
+
     public LoadPlanner(long loadJobId, TUniqueId loadId, long txnId, long dbId, OlapTable destTable,
                        boolean strictMode, String timezone, long timeoutS,
                        long startTime, boolean partialUpdate, ConnectContext context,
@@ -241,14 +243,20 @@ public class LoadPlanner {
         } else if (!isPrimaryKey && partialUpdate) {
             throw new DdlException("Only primary key table support partial update");
         }
+        List<Boolean> isMissAutoIncrementColumn = Lists.newArrayList();
         if (partialUpdate) {
             if (this.etlJobType == EtlJobType.BROKER) {
-                destColumns = Load.getPartialUpateColumns(destTable, fileGroups.get(0).getColumnExprList(), null);
+                destColumns = Load.getPartialUpateColumns(destTable, fileGroups.get(0).getColumnExprList(),
+                    isMissAutoIncrementColumn);
             } else {
-                destColumns = Load.getPartialUpateColumns(destTable, columnDescs, null);
+                destColumns = Load.getPartialUpateColumns(destTable, columnDescs, isMissAutoIncrementColumn);
             }
         } else {
             destColumns = destTable.getFullSchema();
+        }
+
+        if (isMissAutoIncrementColumn.size() != 0) {
+            this.missAutoIncrementColumn = isMissAutoIncrementColumn.get(0);
         }
 
         generateTupleDescriptor(destColumns, isPrimaryKey);
@@ -406,6 +414,9 @@ public class LoadPlanner {
             dataSink = new OlapTableSink((OlapTable) destTable, tupleDesc, partitionIds, canUsePipeLine,
                     ((OlapTable) destTable).writeQuorum(), ((OlapTable) destTable).enableReplicatedStorage(),
                     checkNullExprInAutoIncrement());
+            if (this.missAutoIncrementColumn == Boolean.TRUE) {
+                ((OlapTableSink) dataSink).setMissAutoIncrementColumn();
+            }
             if (completeTabletSink) {
                 ((OlapTableSink) dataSink).init(loadId, txnId, dbId, timeoutS);
                 ((OlapTableSink) dataSink).complete();

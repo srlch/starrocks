@@ -102,6 +102,4 @@ message SegmentPB {
     optional string delete_path = 11;
     optional int64 partial_footer_position = 12;
     optional int64 partial_footer_size = 13;
-    optional int64 auto_increment_partial_footer_position = 14;
-    optional int64 auto_increment_partial_footer_size = 15;
 };
