@@ -146,10 +146,15 @@ public class EditLog {
                             .initTransactionId(id + 1);
                     break;
                 }
-                case OperationType.OP_SAVE_AUTO_INCREMENT_ID: {
+                case OperationType.OP_SAVE_AUTO_INCREMENT_ID:
+                case OperationType.OP_DELETE_AUTO_INCREMENT_ID: {
                     AutoIncrementInfo info = (AutoIncrementInfo) journal.getData();
                     LocalMetastore metastore = globalStateMgr.getLocalMetastore();
-                    metastore.replayAutoIncrementId(info);
+                    if (opCode == OperationType.OP_SAVE_AUTO_INCREMENT_ID) {
+                        metastore.replayAutoIncrementId(info);
+                    } else if (opCode == OperationType.OP_DELETE_AUTO_INCREMENT_ID) {
+                        metastore.replayDeleteAutoIncrementId(info);
+                    }
                     break;
                 }
                 case OperationType.OP_CREATE_DB: {
@@ -1033,6 +1038,10 @@ public class EditLog {
 
     public void logSaveAutoIncrementId(AutoIncrementInfo info) {
         logEdit(OperationType.OP_SAVE_AUTO_INCREMENT_ID, info);
+    }
+
+    public void logSaveDeleteAutoIncrementId(AutoIncrementInfo info) {
+        logEdit(OperationType.OP_DELETE_AUTO_INCREMENT_ID, info);
     }
 
     public void logCreateDb(Database db) {

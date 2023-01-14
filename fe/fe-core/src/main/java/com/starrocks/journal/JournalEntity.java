@@ -193,7 +193,8 @@ public class JournalEntity implements Writable {
                 isRead = true;
                 break;
             }
-            case OperationType.OP_SAVE_AUTO_INCREMENT_ID: {
+            case OperationType.OP_SAVE_AUTO_INCREMENT_ID:
+            case OperationType.OP_DELETE_AUTO_INCREMENT_ID: {
                 data = new AutoIncrementInfo(null);
                 ((AutoIncrementInfo) data).readFields(in);
                 isRead = true;

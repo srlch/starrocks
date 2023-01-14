@@ -4945,6 +4945,16 @@ public class LocalMetastore implements ConnectorMetadata {
         if (!isCheckpointThread()) {
             for (Map.Entry<Long, Long> entry : info.tableIdToIncrementId().entrySet()) {
                 Long tableId = entry.getKey();
+                tableIdToIncrementId.remove(tableId);
+            }
+        }
+    }
+
+    public void replayDeleteAutoIncrementId(AutoIncrementInfo info) throws IOException {
+        // replay when fe start.
+        if (!isCheckpointThread()) {
+            for (Map.Entry<Long, Long> entry : info.tableIdToIncrementId().entrySet()) {
+                Long tableId = entry.getKey();
                 Long id = entry.getValue();
 
                 Long oldId = tableIdToIncrementId.putIfAbsent(tableId, id);
@@ -4972,6 +4982,11 @@ public class LocalMetastore implements ConnectorMetadata {
     }
 
     public void removeAutoIncrementIdByTableId(Long tableId) {
+        ConcurrentHashMap<Long, Long> deltaMap = new ConcurrentHashMap<>();
+        deltaMap.put(tableId, 0L);
+        AutoIncrementInfo info = new AutoIncrementInfo(deltaMap);
+        GlobalStateMgr.getCurrentState().getEditLog().logSaveDeleteAutoIncrementId(info);
+
         tableIdToIncrementId.remove(tableId);
     }
 
