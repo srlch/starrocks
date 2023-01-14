@@ -921,7 +921,6 @@ public class GlobalStateMgr {
         // 3. Load image first and replay edits
         initJournal();
         loadImage(this.imageDir); // load image file
-        localMetastore.setAutoIncrementInit();
 
         // 4. create load and export job label cleaner thread
         createLabelCleaner();
@@ -1031,7 +1030,6 @@ public class GlobalStateMgr {
             }
             long maxJournalId = journal.getMaxJournalId();
             replayJournal(maxJournalId);
-            localMetastore.setAutoIncrementReplay();
             nodeMgr.checkCurrentNodeExist();
             journalWriter.init(maxJournalId);
         } catch (Exception e) {
@@ -1082,10 +1080,6 @@ public class GlobalStateMgr {
                     usingNewPrivilege.set(true);
                 }
                 auth = null;  // remove references to useless objects to release memory
-            }
-
-            if (!localMetastore.autoIncrementReplay) {
-                LOG.info("fatal wrong happen");
             }
 
             // start all daemon threads that only running on MASTER FE

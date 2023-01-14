@@ -560,7 +560,7 @@ public class Load {
     }
 
     public static List<Column> getPartialUpateColumns(Table tbl, List<ImportColumnDesc> columnExprs,
-            boolean missAutoIncrementColumn) throws UserException {
+             List<Boolean> missAutoIncrementColumn) throws UserException {
         Set<String> specified = columnExprs.stream().map(desc -> desc.getColumnName()).collect(Collectors.toSet());
         List<Column> ret = new ArrayList<>();
         for (Column col : tbl.getBaseSchema()) {
@@ -569,7 +569,9 @@ public class Load {
             } else if (col.isKey()) {
                 throw new DdlException("key column " + col.getName() + " not in partial update columns");
             } else if (col.isAutoIncrement()) {
-                missAutoIncrementColumn = true;
+                if (missAutoIncrementColumn != null) {
+                    missAutoIncrementColumn.add(Boolean.TRUE);
+                }
                 ret.add(col);
             }
         }

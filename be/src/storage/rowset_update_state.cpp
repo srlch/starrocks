@@ -417,9 +417,14 @@ Status RowsetUpdateState::_prepare_auto_increment_partial_update_states(Tablet* 
     std::swap(_auto_increment_partial_update_states[idx].rowids, rowids);
 
     size_t new_rows = 0;
-    vector<uint32_t> idxes;
+    std::vector<uint32_t> idxes;
     std::map<uint32_t, std::vector<uint32_t>> rowids_by_rssid;
     plan_read_by_rssid(_auto_increment_partial_update_states[idx].src_rss_rowids, &new_rows, &rowids_by_rssid, &idxes);
+
+    if (new_rows == n) {
+        _auto_increment_partial_update_states[idx].skip_rewrite = true;
+        return Status::OK();
+    }
 
     if (new_rows > 0) {
         uint32_t last = idxes.size() - new_rows;
@@ -431,9 +436,6 @@ Status RowsetUpdateState::_prepare_auto_increment_partial_update_states(Tablet* 
                 ++last;
             }
         }
-    } else {
-        _auto_increment_partial_update_states[idx].skip_rewrite = true;
-        return Status::OK();
     }
 
     RETURN_IF_ERROR(
@@ -448,7 +450,7 @@ bool RowsetUpdateState::_check_partial_update(Rowset* rowset) {
     if (!rowset->rowset_meta()->get_meta_pb().has_txn_meta() || rowset->num_segments() == 0) {
         return false;
     }
-    // Merge condition and auto increment column only partial update will also set txn_meta
+    // Merge condition and auto-increment-column-only partial update will also set txn_meta
     // but will not set partial_update_column_ids
     const auto& txn_meta = rowset->rowset_meta()->get_meta_pb().txn_meta();
     return !txn_meta.partial_update_column_ids().empty();
@@ -575,13 +577,13 @@ Status RowsetUpdateState::apply(Tablet* tablet, Rowset* rowset, uint32_t rowset_
     if (txn_meta.auto_increment_partial_update_column_id() != -1 &&
         !(_partial_update_states.size() == 0 && _auto_increment_partial_update_states[segment_id].skip_rewrite)) {
         RETURN_IF_ERROR(SegmentRewriter::rewrite(src_path, dest_path, tablet->tablet_schema(), _auto_increment_partial_update_states[segment_id],
-                                                read_column_ids, _partial_update_states.size() != 0 ? &_partial_update_states[segment_id].write_columns :
-                                                nullptr));
-    } else {
+                                                 read_column_ids, _partial_update_states.size() != 0 ? &_partial_update_states[segment_id].write_columns :
+                                                 nullptr));
+    } else if (_partial_update_states.size() != 0) {
         FooterPointerPB partial_rowset_footer = txn_meta.partial_rowset_footers(segment_id);
         RETURN_IF_ERROR(SegmentRewriter::rewrite(src_path, dest_path, tablet->tablet_schema(), read_column_ids,
-                                                _partial_update_states[segment_id].write_columns, segment_id,
-                                                partial_rowset_footer));
+                                                 _partial_update_states[segment_id].write_columns, segment_id,
+                                                 partial_rowset_footer));
     }
     int64_t t_rewrite_end = MonotonicMillis();
     LOG(INFO) << strings::Substitute("apply partial segment tablet:$0 rowset:$1 seg:$2 #column:$3 #rewrite:$4ms",

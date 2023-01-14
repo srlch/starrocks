@@ -261,8 +261,6 @@ public class LocalMetastore implements ConnectorMetadata {
     private final CatalogRecycleBin recycleBin;
     private ColocateTableIndex colocateTableIndex;
     private final SystemInfoService systemInfoService;
-    public static boolean autoIncrementInit = false;
-    public static boolean autoIncrementReplay = false;
 
     public LocalMetastore(GlobalStateMgr globalStateMgr, CatalogRecycleBin recycleBin,
                           ColocateTableIndex colocateTableIndex, SystemInfoService systemInfoService) {
@@ -4931,7 +4929,7 @@ public class LocalMetastore implements ConnectorMetadata {
         AutoIncrementInfo info = new AutoIncrementInfo(null);
         info.read(dis);
         // do the actually update when fe start.
-        if (!autoIncrementInit) {
+        if (!isCheckpointThread()) {
             for (Map.Entry<Long, Long> entry : info.tableIdToIncrementId().entrySet()) {
                 Long tableId = entry.getKey();
                 Long id = entry.getValue();
@@ -4944,7 +4942,7 @@ public class LocalMetastore implements ConnectorMetadata {
 
     public void replayAutoIncrementId(AutoIncrementInfo info) throws IOException {
         // replay when fe start.
-        if (!autoIncrementReplay) {
+        if (!isCheckpointThread()) {
             for (Map.Entry<Long, Long> entry : info.tableIdToIncrementId().entrySet()) {
                 Long tableId = entry.getKey();
                 Long id = entry.getValue();
@@ -4956,14 +4954,6 @@ public class LocalMetastore implements ConnectorMetadata {
                 }
             }
         }
-    }
-
-    public void setAutoIncrementReplay() {
-        autoIncrementReplay = true;
-    }
-
-    public void setAutoIncrementInit() {
-        autoIncrementInit = true;
     }
 
     public Long allocateAutoIncrementId(Long tableId, Long rows) {

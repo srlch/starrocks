@@ -97,13 +97,10 @@ public class StreamLoadPlanner {
     private Analyzer analyzer;
     private DescriptorTable descTable;
 
-    private boolean missAutoIncrementColumn;
-
     public StreamLoadPlanner(Database db, OlapTable destTable, StreamLoadInfo streamLoadInfo) {
         this.db = db;
         this.destTable = destTable;
         this.streamLoadInfo = streamLoadInfo;
-        this.missAutoIncrementColumn = false;
     }
 
     private void resetAnalyzer() {
@@ -134,8 +131,9 @@ public class StreamLoadPlanner {
         }
         List<Pair<Integer, ColumnDict>> globalDicts = Lists.newArrayList();
         List<Column> destColumns;
+        List<Boolean> missAutoIncrementColumn = Lists.newArrayList();
         if (streamLoadInfo.isPartialUpdate()) {
-            destColumns = Load.getPartialUpateColumns(destTable, streamLoadInfo.getColumnExprDescs(), this.missAutoIncrementColumn);
+            destColumns = Load.getPartialUpateColumns(destTable, streamLoadInfo.getColumnExprDescs(), missAutoIncrementColumn);
         } else {
             destColumns = destTable.getFullSchema();
         }
@@ -178,7 +176,7 @@ public class StreamLoadPlanner {
         List<Long> partitionIds = getAllPartitionIds();
         OlapTableSink olapTableSink = new OlapTableSink(destTable, tupleDesc, partitionIds, writeQuorum,
                 destTable.enableReplicatedStorage(), scanNode.nullExprInAutoIncrement());
-        if (this.missAutoIncrementColumn) {
+        if (missAutoIncrementColumn.size() == 1 && missAutoIncrementColumn.get(0) == Boolean.TRUE) {
             olapTableSink.setMissAutoIncrementColumn();
         }
         olapTableSink.init(loadId, streamLoadInfo.getTxnId(), db.getId(), streamLoadInfo.getTimeout());
