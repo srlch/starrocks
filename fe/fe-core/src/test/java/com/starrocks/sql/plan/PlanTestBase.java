@@ -164,6 +164,20 @@ public class PlanTestBase {
                 "\"storage_format\" = \"DEFAULT\"\n" +
                 ");");
 
+        starRocksAssert.withTable("CREATE TABLE `auto_increment_t0` (\n" +
+                "  `id1` bigint NOT NULL COMMENT \"\",\n" +
+                "  `id2` bigint NOT NULL COMMENT \"\",\n" +
+                "  `id3` bigint NOT NULL AUTO_INCREMENT \n" +
+                ") ENGINE=OLAP\n" +
+                "Primary KEY(`id1`, `id2`)\n" +
+                "DISTRIBUTED BY HASH(`id1`, `id2`) BUCKETS 3\n" +
+                "PROPERTIES (\n" +
+                "\"replication_num\" = \"1\",\n" +
+                "\"in_memory\" = \"false\",\n" +
+                "\"storage_format\" = \"DEFAULT\"\n" +
+                "\"replicated_storage\" = \"true\"\n" +
+                ");");
+
         starRocksAssert.withTable("CREATE TABLE `colocate_t0` (\n" +
                 "  `v1` bigint NULL COMMENT \"\",\n" +
                 "  `v2` bigint NULL COMMENT \"\",\n" +
