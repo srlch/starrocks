@@ -378,6 +378,9 @@ Status MemTable::_split_upserts_deletes(ChunkPtr& src, ChunkPtr* upserts, std::u
         *upserts = src;
         return Status::OK();
     }
+    if (_abort_delete) {
+        return Status::InternalError(fmt::format("delete memtable of tablet {} is forbidden", _tablet_id));
+    }
     if (!_merge_condition.empty()) {
         // Do not support delete with condition now
         return Status::InternalError(

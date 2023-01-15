@@ -442,9 +442,6 @@ Status RowsetUpdateState::_prepare_auto_increment_partial_update_states(Tablet* 
             tablet->updates()->get_column_values(column_id, new_rows > 0, rowids_by_rssid, &read_column, &_auto_increment_partial_update_states[idx]));
 
     _auto_increment_partial_update_states[idx].write_column->append_selective(*read_column[0], idxes.data(), 0, idxes.size());
-
-    _memory_usage += _auto_increment_partial_update_states[idx].write_column->memory_usage();
-
     return Status::OK();
 }
 
@@ -607,7 +604,6 @@ Status RowsetUpdateState::apply(Tablet* tablet, Rowset* rowset, uint32_t rowset_
         _partial_update_states[segment_id].release();
     }
     if (txn_meta.auto_increment_partial_update_column_id() != -1) {
-        _memory_usage -= _auto_increment_partial_update_states[segment_id].write_column->memory_usage();
         _auto_increment_partial_update_states[segment_id].release();
     }
     return Status::OK();

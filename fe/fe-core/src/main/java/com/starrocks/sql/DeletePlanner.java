@@ -27,6 +27,7 @@ import com.starrocks.planner.DataSink;
 import com.starrocks.planner.OlapTableSink;
 import com.starrocks.planner.PlanFragment;
 import com.starrocks.qe.ConnectContext;
+import com.starrocks.sql.analyzer.SemanticException;
 import com.starrocks.sql.ast.DeleteStmt;
 import com.starrocks.sql.ast.QueryRelation;
 import com.starrocks.sql.optimizer.OptExpression;
@@ -77,6 +78,9 @@ public class DeletePlanner {
             TupleDescriptor olapTuple = descriptorTable.createTupleDescriptor();
 
             OlapTable table = (OlapTable) deleteStatement.getTable();
+            if (table.getAbortDelete()) {
+                throw new SemanticException("Delete Statement is forbidden");
+            }
             for (Column column : table.getBaseSchema()) {
                 if (column.isKey()) {
                     SlotDescriptor slotDescriptor = descriptorTable.addSlotDescriptor(olapTuple);

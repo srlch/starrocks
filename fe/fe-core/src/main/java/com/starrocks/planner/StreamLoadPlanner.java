@@ -180,7 +180,7 @@ public class StreamLoadPlanner {
             olapTableSink.setMissAutoIncrementColumn();
         }
         olapTableSink.init(loadId, streamLoadInfo.getTxnId(), db.getId(), streamLoadInfo.getTimeout());
-        Load.checkMergeCondition(streamLoadInfo.getMergeConditionStr(), destTable);
+        Load.checkMergeCondition(streamLoadInfo.getMergeConditionStr(), destTable, missAutoIncrementColumn.get(0).booleanValue());
         olapTableSink.complete(streamLoadInfo.getMergeConditionStr());
 
         // for stream load, we only need one fragment, ScanNode -> DataSink.

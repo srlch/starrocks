@@ -226,6 +226,22 @@ Status DeltaWriter::_init() {
         }
     }
 
+    auto sort_key_idxes = _tablet->tablet_schema().sort_key_idxes();
+    std::sort(sort_key_idxes.begin(), sort_key_idxes.end());
+    bool auto_increment_in_sort_key = false;
+    for (auto &idx : sort_key_idxes) {
+        auto &col = _tablet->tablet_schema().column(idx);
+        if (col.is_auto_increment()) {
+            auto_increment_in_sort_key = true;
+            break;
+        }
+    }
+
+    if (auto_increment_in_sort_key && _opt.miss_auto_increment_column) {
+        LOG(WARNING) << "table with sort key do not support partial update";
+        return Status::NotSupported("table with sort key do not support partial update");
+    }
+
     writer_context.rowset_id = _storage_engine->next_rowset_id();
     writer_context.tablet_uid = _tablet->tablet_uid();
     writer_context.tablet_id = _opt.tablet_id;
@@ -238,6 +254,7 @@ Status DeltaWriter::_init() {
     writer_context.segments_overlap = OVERLAPPING;
     writer_context.global_dicts = _opt.global_dicts;
     writer_context.miss_auto_increment_column_id = _opt.miss_auto_increment_column;
+    writer_context.abort_delete = _opt.abort_delete;
     Status st = RowsetFactory::create_rowset_writer(writer_context, &_rowset_writer);
     if (!st.ok()) {
         auto msg = strings::Substitute("Fail to create rowset writer. tablet_id: $0, error: $1", _opt.tablet_id,
@@ -299,10 +316,6 @@ Status DeltaWriter::write(const Chunk& chunk, const uint32_t* indexes, uint32_t 
     if (_replica_state == Secondary) {
         return Status::InternalError(fmt::format("Fail to write chunk, tablet_id: {}, replica_state: {}",
                                                  _opt.tablet_id, _replica_state_name(_replica_state)));
-    }
-
-    if (_opt.miss_auto_increment_column) {
-        RETURN_IF_ERROR(_fill_auto_increment_id(chunk));
     }
 
     Status st;
@@ -375,6 +388,9 @@ Status DeltaWriter::_flush_memtable_async(bool eos) {
     if (_mem_table != nullptr) {
         RETURN_IF_ERROR(_mem_table->finalize());
     }
+    if (_opt.miss_auto_increment_column && _replica_state == Primary) {
+        RETURN_IF_ERROR(_fill_auto_increment_id(*_mem_table->get_result_chunk()));
+    }
     if (_replica_state == Primary) {
         // have secondary replica
         if (_replicate_token != nullptr) {
@@ -419,6 +435,7 @@ void DeltaWriter::_reset_mem_table() {
                                                 _mem_table_sink.get(), "", _mem_tracker);
     }
     _mem_table->set_write_buffer_row(_memtable_buffer_row);
+    _mem_table->set_abort_delete(_opt.abort_delete);
 }
 
 Status DeltaWriter::commit() {

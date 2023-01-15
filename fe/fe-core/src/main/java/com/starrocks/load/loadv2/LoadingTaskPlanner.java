@@ -235,7 +235,7 @@ public class LoadingTaskPlanner {
             olapTableSink.setMissAutoIncrementColumn();
         }
         olapTableSink.init(loadId, txnId, dbId, timeoutS);
-        Load.checkMergeCondition(mergeConditionStr, table);
+        Load.checkMergeCondition(mergeConditionStr, table, false);
         olapTableSink.complete(mergeConditionStr);
 
         // 3. Plan fragment
@@ -309,7 +309,7 @@ public class LoadingTaskPlanner {
         OlapTableSink olapTableSink = new OlapTableSink(table, tupleDesc, partitionIds, true,
                 table.writeQuorum(), table.enableReplicatedStorage(), checkNullExprInAutoIncrement());
         olapTableSink.init(loadId, txnId, dbId, timeoutS);
-        Load.checkMergeCondition(mergeConditionStr, table);
+        Load.checkMergeCondition(mergeConditionStr, table, false);
         olapTableSink.complete(mergeConditionStr);
 
         // 6. Sink plan fragment

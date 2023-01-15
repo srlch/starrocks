@@ -112,7 +112,8 @@ public class Load {
      * @return
      * @throws UserException
      */
-    public static void checkMergeCondition(String mergeCondition, OlapTable table) throws DdlException {
+    public static void checkMergeCondition(String mergeCondition, OlapTable table,
+            boolean missAutoIncrementColumn) throws DdlException {
         if (mergeCondition == null || mergeCondition.isEmpty()) {
             return;
         }
@@ -125,6 +126,9 @@ public class Load {
             if (table.getColumn(mergeCondition).isKey()) {
                 throw new DdlException("Merge condition column " + mergeCondition
                         + " should not be primary key!");
+            }
+            if (missAutoIncrementColumn && table.getColumn(mergeCondition).isAutoIncrement()) {
+                throw new DdlException("Merge condition column can not be auto increment column in partial update");
             }
             switch (table.getColumn(mergeCondition).getPrimitiveType()) {
                 case CHAR:

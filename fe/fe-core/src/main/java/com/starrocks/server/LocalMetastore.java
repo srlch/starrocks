@@ -2176,6 +2176,14 @@ public class LocalMetastore implements ConnectorMetadata {
             }
         }
 
+        if (olapTable.getKeysType() == KeysType.PRIMARY_KEYS) {
+            for (Column col : baseSchema) {
+                if (col.isAutoIncrement() && !col.isKey()) {
+                    olapTable.setAbortDelete();
+                }
+            }
+        }
+
         TTabletType tabletType = TTabletType.TABLET_TYPE_DISK;
         try {
             tabletType = PropertyAnalyzer.analyzeTabletType(properties);

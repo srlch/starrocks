@@ -195,6 +195,9 @@ public class OlapTable extends Table implements GsonPostProcessable {
     @SerializedName(value = "tableProperty")
     protected TableProperty tableProperty;
 
+    @SerializedName(value = "abortDelete")
+    protected boolean abortDelete = false;
+
     public OlapTable() {
         this(TableType.OLAP);
     }
@@ -258,6 +261,14 @@ public class OlapTable extends Table implements GsonPostProcessable {
 
     public void setTableProperty(TableProperty tableProperty) {
         this.tableProperty = tableProperty;
+    }
+
+    public void setAbortDelete() {
+        this.abortDelete = true;
+    }
+
+    public boolean getAbortDelete() {
+        return this.abortDelete;
     }
 
     public TableProperty getTableProperty() {
