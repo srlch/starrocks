@@ -536,5 +536,9 @@ public class OlapTableSink extends DataSink {
     public boolean canUsePipeLine() {
         return Config.enable_pipeline_load && enablePipelineLoad;
     }
+
+    public boolean missAutoIncrementColumn() {
+        return this.missAutoIncrementColumn;
+    }
 }
 
