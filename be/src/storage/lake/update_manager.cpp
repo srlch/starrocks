@@ -73,6 +73,7 @@ Status UpdateManager::publish_primary_key_tablet(const TxnLogPB_OpWrite& op_writ
         new_deletes[rowset_id + i] = {};
     }
     auto& upserts = state.upserts();
+    // handle merge condition, skip update row which's merge condition column value is smaller than current row
     int32_t condition_column = _get_condition_column(op_write, *tablet_schema);
     for (uint32_t i = 0; i < upserts.size(); i++) {
         if (upserts[i] != nullptr) {

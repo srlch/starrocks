@@ -189,11 +189,14 @@ TEST_F(LinkedSchemaChangeTest, test_add_column) {
 
     // write 2 rowsets
     int64_t version = 1;
-    int64_t txn_id = 1000;
     auto base_tablet_id = _base_tablet_metadata->id();
+    LakeDeltaWriterOptions option;
+    option.tablet_id = base_tablet_id;
+    option.partition_id = _partition_id;
+    int64_t txn_id = 1000;
     {
-        auto delta_writer = DeltaWriter::create(_tablet_manager.get(), base_tablet_id, txn_id, _partition_id, nullptr,
-                                                _mem_tracker.get());
+        option.txn_id = txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunk0, indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());
@@ -203,8 +206,8 @@ TEST_F(LinkedSchemaChangeTest, test_add_column) {
         txn_id++;
     }
     {
-        auto delta_writer = DeltaWriter::create(_tablet_manager.get(), base_tablet_id, txn_id, _partition_id, nullptr,
-                                                _mem_tracker.get());
+        option.txn_id = txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunk1, indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());
@@ -385,9 +388,12 @@ TEST_F(DirectSchemaChangeTest, test_alter_column_type) {
     int64_t version = 1;
     int64_t txn_id = 1000;
     auto base_tablet_id = _base_tablet_metadata->id();
+    LakeDeltaWriterOptions option;
+    option.tablet_id = base_tablet_id;
+    option.partition_id = _partition_id;
     {
-        auto delta_writer = DeltaWriter::create(_tablet_manager.get(), base_tablet_id, txn_id, _partition_id, nullptr,
-                                                _mem_tracker.get());
+        option.txn_id = txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunk0, indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());
@@ -397,8 +403,8 @@ TEST_F(DirectSchemaChangeTest, test_alter_column_type) {
         txn_id++;
     }
     {
-        auto delta_writer = DeltaWriter::create(_tablet_manager.get(), base_tablet_id, txn_id, _partition_id, nullptr,
-                                                _mem_tracker.get());
+        option.txn_id = txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunk1, indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());
@@ -603,9 +609,12 @@ TEST_F(SortedSchemaChangeTest, test_alter_key_order) {
     int64_t version = 1;
     int64_t txn_id = 1000;
     auto base_tablet_id = _base_tablet_metadata->id();
+    LakeDeltaWriterOptions option;
+    option.tablet_id = base_tablet_id;
+    option.partition_id = _partition_id;
     {
-        auto delta_writer = DeltaWriter::create(_tablet_manager.get(), base_tablet_id, txn_id, _partition_id, nullptr,
-                                                _mem_tracker.get());
+        option.txn_id = txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunk0, indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());
@@ -615,8 +624,8 @@ TEST_F(SortedSchemaChangeTest, test_alter_key_order) {
         txn_id++;
     }
     {
-        auto delta_writer = DeltaWriter::create(_tablet_manager.get(), base_tablet_id, txn_id, _partition_id, nullptr,
-                                                _mem_tracker.get());
+        option.txn_id = txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunk1, indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());

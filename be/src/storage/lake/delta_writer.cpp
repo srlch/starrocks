@@ -297,6 +297,10 @@ Status DeltaWriterImpl::finish() {
             op_write->add_rewrite_segments(random_segment_filename());
         }
     }
+    // handle condition update
+    if (_merge_condition != "") {
+        op_write->mutable_txn_meta()->set_merge_condition(_merge_condition);
+    }
     RETURN_IF_ERROR(tablet.put_txn_log(std::move(txn_log)));
     return Status::OK();
 }

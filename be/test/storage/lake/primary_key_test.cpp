@@ -250,10 +250,13 @@ TEST_F(PrimaryKeyTest, test_write_multitime) {
 
     auto version = 1;
     auto tablet_id = _tablet_metadata->id();
+    LakeDeltaWriterOptions option;
+    option.tablet_id = tablet_id;
+    option.partition_id = _partition_id;
     for (int i = 0; i < 3; i++) {
         _txn_id++;
-        auto delta_writer =
-                DeltaWriter::create(_tablet_manager, tablet_id, _txn_id, _partition_id, nullptr, _mem_tracker.get());
+        option.txn_id = _txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager, _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunk0, indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());
@@ -279,11 +282,14 @@ TEST_F(PrimaryKeyTest, test_write_fail_retry) {
 
     auto version = 1;
     auto tablet_id = _tablet_metadata->id();
+    LakeDeltaWriterOptions option;
+    option.tablet_id = tablet_id;
+    option.partition_id = _partition_id;
     // write success
     for (int i = 0; i < 3; i++) {
         _txn_id++;
-        auto delta_writer =
-                DeltaWriter::create(_tablet_manager, tablet_id, _txn_id, _partition_id, nullptr, _mem_tracker.get());
+        option.txn_id = _txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager, _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunks[i], indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());
@@ -295,8 +301,8 @@ TEST_F(PrimaryKeyTest, test_write_fail_retry) {
     // write failed
     for (int i = 3; i < 5; i++) {
         _txn_id++;
-        auto delta_writer =
-                DeltaWriter::create(_tablet_manager, tablet_id, _txn_id, _partition_id, nullptr, _mem_tracker.get());
+        option.txn_id = _txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager, _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunks[i], indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());
@@ -318,8 +324,8 @@ TEST_F(PrimaryKeyTest, test_write_fail_retry) {
     // write success
     for (int i = 3; i < 5; i++) {
         _txn_id++;
-        auto delta_writer =
-                DeltaWriter::create(_tablet_manager, tablet_id, _txn_id, _partition_id, nullptr, _mem_tracker.get());
+        option.txn_id = _txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager, _mem_tracker.get());
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunks[i], indexes.data(), indexes.size()));
         ASSERT_OK(delta_writer->finish());

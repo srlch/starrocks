@@ -27,6 +27,7 @@
 #include "fs/fs_util.h"
 #include "runtime/mem_tracker.h"
 #include "storage/chunk_helper.h"
+#include "storage/lake/delta_writer.h"
 #include "storage/lake/fixed_location_provider.h"
 #include "storage/lake/join_path.h"
 #include "storage/lake/tablet.h"
@@ -200,8 +201,9 @@ TEST_F(AsyncDeltaWriterTest, test_write) {
     }
 
     // Create and open DeltaWriter
+    auto tablet_id = _tablet_metadata->id();
     LakeDeltaWriterOptions option;
-    option.tablet_id = _tablet_metadata->id();
+    option.tablet_id = tablet_id;
     option.txn_id = _txn_id;
     option.partition_id = _partition_id;
     option.slots = nullptr;
@@ -280,8 +282,9 @@ TEST_F(AsyncDeltaWriterTest, test_write_concurrently) {
     }
 
     // Create and open DeltaWriter
+    auto tablet_id = _tablet_metadata->id();
     LakeDeltaWriterOptions option;
-    option.tablet_id = _tablet_metadata->id();
+    option.tablet_id = tablet_id;
     option.txn_id = _txn_id;
     option.partition_id = _partition_id;
     option.slots = nullptr;
@@ -378,8 +381,9 @@ TEST_F(AsyncDeltaWriterTest, test_write_after_close) {
     }
 
     // Create and open DeltaWriter
+    auto tablet_id = _tablet_metadata->id();
     LakeDeltaWriterOptions option;
-    option.tablet_id = _tablet_metadata->id();
+    option.tablet_id = tablet_id;
     option.txn_id = _txn_id;
     option.partition_id = _partition_id;
     option.slots = nullptr;
