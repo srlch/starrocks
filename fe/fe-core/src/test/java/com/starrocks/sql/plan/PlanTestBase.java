@@ -177,7 +177,7 @@ public class PlanTestBase {
                 "PROPERTIES (\n" +
                 "\"replication_num\" = \"1\",\n" +
                 "\"in_memory\" = \"false\",\n" +
-                "\"storage_format\" = \"DEFAULT\"\n" +
+                "\"storage_format\" = \"DEFAULT\",\n" +
                 "\"replicated_storage\" = \"true\"\n" +
                 ");");
 
