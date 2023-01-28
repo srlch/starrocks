@@ -1239,7 +1239,6 @@ Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num
     cur_avaliable_min_id += num_row;
 
     return Status::OK();
->>>>>>> f6ee84779 ([Feature] Support Auto-Increment Column (#14350))
 }
 
 DummyStorageEngine::DummyStorageEngine(const EngineOptions& options)

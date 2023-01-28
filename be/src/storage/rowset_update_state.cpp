@@ -385,7 +385,7 @@ Status RowsetUpdateState::_prepare_auto_increment_partial_update_states(Tablet* 
     }
     DCHECK_EQ(column_id.size(), 1);
     const auto& rowset_meta_pb = rowset->rowset_meta()->get_meta_pb();
-    auto read_column_schema = ChunkHelper::convert_schema_to_format_v2(tablet->tablet_schema(), column_id);
+    auto read_column_schema = ChunkHelper::convert_schema(tablet->tablet_schema(), column_id);
     std::vector<std::unique_ptr<Column>> read_column;
     read_column.resize(1);
 

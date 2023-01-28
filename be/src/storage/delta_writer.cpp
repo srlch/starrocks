@@ -590,7 +590,7 @@ Status DeltaWriter::_fill_auto_increment_id(const Chunk& chunk) {
     for (size_t i = 0; i < _tablet_schema->num_key_columns(); i++) {
         pk_columns.push_back((uint32_t)i);
     }
-    VectorizedSchema pkey_schema = ChunkHelper::convert_schema_to_format_v2(*_tablet_schema, pk_columns);
+    Schema pkey_schema = ChunkHelper::convert_schema(*_tablet_schema, pk_columns);
     std::unique_ptr<Column> pk_column;
     if (!PrimaryKeyEncoder::create_column(pkey_schema, &pk_column).ok()) {
         CHECK(false) << "create column for primary key encoder failed";

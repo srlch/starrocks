@@ -90,7 +90,7 @@ Status SegmentRewriter::rewrite(const std::string& src_path, const std::string& 
             src_column_ids.emplace_back(i);
         }
     }
-    VectorizedSchema src_schema = ChunkHelper::convert_schema_to_format_v2(tschema, src_column_ids);
+    Schema src_schema = ChunkHelper::convert_schema(tschema, src_column_ids);
 
     rowset->load();
 
@@ -117,7 +117,7 @@ Status SegmentRewriter::rewrite(const std::string& src_path, const std::string& 
 
     std::vector<uint32_t> full_column_ids(tschema.num_columns());
     std::iota(full_column_ids.begin(), full_column_ids.end(), 0);
-    auto schema = ChunkHelper::convert_schema_to_format_v2(tschema, full_column_ids);
+    auto schema = ChunkHelper::convert_schema(tschema, full_column_ids);
     auto chunk = ChunkHelper::new_chunk(schema, full_column_ids.size());
 
     size_t update_columns_index = 0;
