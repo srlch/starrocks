@@ -131,7 +131,6 @@ Status RowsetWriter::init() {
         (_context.partial_update_tablet_schema || !_context.merge_condition.empty() ||
          _context.miss_auto_increment_column_id)) {
         _rowset_txn_meta_pb = std::make_unique<RowsetTxnMetaPB>();
-        _rowset_txn_meta_pb->set_auto_increment_partial_update_column_id(-1);
     }
 
     ASSIGN_OR_RETURN(_fs, FileSystem::CreateSharedFromString(_context.rowset_path_prefix));

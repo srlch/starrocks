@@ -386,11 +386,11 @@ private:
 
     std::unordered_map<int64_t, std::pair<int64_t, int64_t>*> _tableid_auto_increment_map;
 
-    int32_t _tables_auto_increment_shards_mask;
-
-    std::vector<std::mutex> *_tables_auto_increment_mutex_shards;
+    std::unordered_map<int64_t, std::mutex*> _tabletid_auto_increment_mutex;
 
     std::shared_mutex _auto_increment_mutex;
+
+    std::shared_mutex _auto_increment_delete_mutex;
 
     StorageEngine(const StorageEngine&) = delete;
     const StorageEngine& operator=(const StorageEngine&) = delete;

@@ -159,6 +159,7 @@ Status SchemaScanner::_create_slot_descs(ObjectPool* pool) {
 
         t_slot_desc.__set_slotIdx(i);
         t_slot_desc.__set_isMaterialized(true);
+        t_slot_desc.__set_isAutoIncrement(false);
 
         SlotDescriptor* slot = pool->add(new (std::nothrow) SlotDescriptor(t_slot_desc));
 

@@ -818,7 +818,6 @@ Status OlapTableSink::init(const TDataSink& t_sink, RuntimeState* state) {
     _is_lake_table = table_sink.is_lake_table;
     _keys_type = table_sink.keys_type;
     _null_expr_in_auto_increment = table_sink.null_expr_in_auto_increment;
-    _auto_increment_column_name = table_sink.auto_increment_column_name;
     _miss_auto_increment_column = table_sink.miss_auto_increment_column;
     _abort_delete = table_sink.abort_delete;
     if (table_sink.__isset.write_quorum_type) {
@@ -1352,13 +1351,8 @@ Status OlapTableSink::_fill_auto_increment_id(Chunk* chunk) {
     _auto_increment_slot_id = -1;
     _has_auto_increment = false;
 
-    // no auto increment column.
-     if (_auto_increment_column_name.size() == 0) {
-         return Status::OK();
-     }
-
      for (auto &slot : _output_tuple_desc->slots()) {
-         if (slot->col_name() == _auto_increment_column_name) {
+         if (slot->is_auto_increment()) {
              RETURN_IF_ERROR(_fill_auto_increment_id_internal(chunk, slot, _schema->table_id()));
              break;
          }
@@ -1393,7 +1387,8 @@ Status OlapTableSink::_fill_auto_increment_id_internal(Chunk* chunk, SlotDescrip
         if (!_miss_auto_increment_column) {
             RETURN_IF_ERROR(StorageEngine::instance()->get_next_increment_id_interval(table_id, null_rows, ids));
         } else {
-            // auto increment id will be allocate in DeltaWriter
+            // partial update does not specify an auto-increment column,
+            // it will be allocate in DeltaWriter.
             ids.assign(null_rows, 0);
         }
         RETURN_IF_ERROR((std::dynamic_pointer_cast<Int64Column>(data_col))->fill_range(ids, filter));

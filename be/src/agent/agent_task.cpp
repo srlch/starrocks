@@ -718,6 +718,7 @@ void run_update_meta_info_task(const std::shared_ptr<UpdateTabletMetaInfoAgentTa
 }
 
 AgentStatus drop_auto_increment_map(TTableId table_id) {
+    // always success
     StorageEngine::instance()->remove_increment_map_by_table_id(table_id);
     return STARROCKS_SUCCESS;
 }

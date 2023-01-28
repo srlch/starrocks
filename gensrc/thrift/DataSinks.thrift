@@ -183,9 +183,8 @@ struct TOlapTableSink {
     19: optional bool enable_replicated_storage
     20: optional string merge_condition
     21: optional bool null_expr_in_auto_increment
-    22: optional string auto_increment_column_name
-    23: optional bool miss_auto_increment_column
-    24: optional bool abort_delete
+    22: optional bool miss_auto_increment_column
+    23: optional bool abort_delete
 }
 
 struct TDataSink {

@@ -108,9 +108,7 @@ StorageEngine::StorageEngine(const EngineOptions& options)
           _rowset_id_generator(new UniqueRowsetIdGenerator(options.backend_uid)),
           _memtable_flush_executor(nullptr),
           _update_manager(new UpdateManager(options.update_mem_tracker)),
-          _compaction_manager(new CompactionManager()),
-          _tables_auto_increment_shards_mask(config::table_auto_increment_shard_size - 1),
-          _tables_auto_increment_mutex_shards(new std::vector<std::mutex>(config::table_auto_increment_shard_size)) {
+          _compaction_manager(new CompactionManager()) {
 #ifdef BE_TEST
     _p_instance = _s_instance;
     _s_instance = this;
@@ -1135,32 +1133,31 @@ bool StorageEngine::check_rowset_id_in_unused_rowsets(const RowsetId& rowset_id)
 }
 
 void StorageEngine::remove_increment_map_by_table_id(int64_t table_id) {
-    {
-        // LIKELY, lock shared mode.
-        std::shared_lock l(_auto_increment_mutex);
-        auto iter = _tableid_auto_increment_map.find(table_id);
-        if (iter == _tableid_auto_increment_map.end()) {
-            return;
-        }
+    std::unique_lock delete_lock(_auto_increment_delete_mutex);
+
+    if (_tableid_auto_increment_map.find(table_id) != _tableid_auto_increment_map.end()) {
+        delete _tableid_auto_increment_map[table_id];
+        _tableid_auto_increment_map.erase(_tableid_auto_increment_map.find(table_id));
     }
 
-    // UNLIKELY, lock mode.
-    std::unique_lock l(_auto_increment_mutex);
-    if (_tableid_auto_increment_map.find(table_id) == _tableid_auto_increment_map.end()) {
-        return;
+    if (_tabletid_auto_increment_mutex.find(table_id) != _tabletid_auto_increment_mutex.end()) {
+        delete _tabletid_auto_increment_mutex[table_id];
+        _tabletid_auto_increment_mutex.erase(_tabletid_auto_increment_mutex.find(table_id));
     }
-    delete _tableid_auto_increment_map[table_id];
-    _tableid_auto_increment_map.erase(_tableid_auto_increment_map.find(table_id));
 }
 
 Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num_row,
                                                    std::vector<int64_t> &ids) {
     bool need_init = false;
+    std::pair<int64_t, int64_t> *interval;
+    std::mutex *mutex;
+
+    // used for delete.
+    std::shared_lock delete_lock(_auto_increment_delete_mutex);
     // lock shared mode to check <tableid, <min,max>> exist or not.
     _auto_increment_mutex.lock_shared();
     auto iter = _tableid_auto_increment_map.find(tableid);
     auto end_iter = _tableid_auto_increment_map.end();
-    std::pair<int64_t, int64_t> *interval;
 
     if (UNLIKELY(iter == end_iter)) {
         _auto_increment_mutex.unlock_shared();
@@ -1169,19 +1166,21 @@ Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num
 
         if (_tableid_auto_increment_map.find(tableid) == _tableid_auto_increment_map.end()) {
             _tableid_auto_increment_map.insert({tableid, new std::pair<int64_t,int64_t>({0, 0})});
+            _tabletid_auto_increment_mutex.insert({tableid, new std::mutex()});
             need_init = true;
         }
 
         interval = _tableid_auto_increment_map.at(tableid);
+        mutex = _tabletid_auto_increment_mutex.at(tableid);
         _auto_increment_mutex.unlock();
     } else {
         interval = _tableid_auto_increment_map.at(tableid);
+        mutex = _tabletid_auto_increment_mutex.at(tableid);
         _auto_increment_mutex.unlock_shared();
     }
 
-    // lock shard for different tableid
-    std::unique_lock<std::mutex> l((*_tables_auto_increment_mutex_shards)
-                                   [tableid % _tables_auto_increment_shards_mask]);
+    // lock for different tableid
+    std::unique_lock<std::mutex> l(*mutex);
 
     // avaliable id interval: [cur_avaliable_min_id, cur_max_id)
     int64_t &cur_avaliable_min_id = interval->first;

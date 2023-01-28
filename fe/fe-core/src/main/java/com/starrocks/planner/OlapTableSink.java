@@ -121,11 +121,7 @@ public class OlapTableSink extends DataSink {
     private final boolean enableReplicatedStorage;
 
     private boolean nullExprInAutoIncrement;
-
-    private String autoIncrementColumnName;
-
     private boolean missAutoIncrementColumn;
-
     private boolean abortDelete;
 
     public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds,
@@ -146,17 +142,7 @@ public class OlapTableSink extends DataSink {
         this.enableReplicatedStorage = enableReplicatedStorage;
         this.nullExprInAutoIncrement = nullExprInAutoIncrement;
         this.missAutoIncrementColumn = false;
-
-        this.autoIncrementColumnName = null;
-         for (Column column : dstTable.getBaseSchema()) {
-             if (column.isAutoIncrement()) {
-                 this.autoIncrementColumnName = column.getName();
-             }
-         }
-
-         this.missAutoIncrementColumn = false;
-
-         this.abortDelete = dstTable.getAbortDelete();
+        this.abortDelete = dstTable.getAbortDelete();
     }
 
     public void init(TUniqueId loadId, long txnId, long dbId, long loadChannelTimeoutS)
@@ -165,7 +151,6 @@ public class OlapTableSink extends DataSink {
         tSink.setLoad_id(loadId);
         tSink.setTxn_id(txnId);
         tSink.setNull_expr_in_auto_increment(nullExprInAutoIncrement);
-        tSink.setAuto_increment_column_name(autoIncrementColumnName);
         tSink.setMiss_auto_increment_column(missAutoIncrementColumn);
         tSink.setAbort_delete(abortDelete);
         TransactionState txnState =

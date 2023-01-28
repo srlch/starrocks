@@ -388,7 +388,8 @@ Status DeltaWriter::_flush_memtable_async(bool eos) {
     if (_mem_table != nullptr) {
         RETURN_IF_ERROR(_mem_table->finalize());
     }
-    if (_opt.miss_auto_increment_column && _replica_state == Primary) {
+    if (_mem_table != nullptr && _opt.miss_auto_increment_column && _replica_state == Primary &&
+        _mem_table->get_result_chunk() != nullptr) {
         RETURN_IF_ERROR(_fill_auto_increment_id(*_mem_table->get_result_chunk()));
     }
     if (_replica_state == Primary) {

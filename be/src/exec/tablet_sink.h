@@ -466,8 +466,6 @@ private:
     bool _miss_auto_increment_column = false;
 
     bool _abort_delete = false;
-
-    std::string _auto_increment_column_name;
 };
 
 } // namespace stream_load

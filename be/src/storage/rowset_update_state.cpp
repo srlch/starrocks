@@ -364,7 +364,7 @@ Status RowsetUpdateState::_prepare_partial_update_states(Tablet* tablet, Rowset*
             tablet->updates()->get_column_values(read_column_ids, num_default > 0, rowids_by_rssid, &read_columns, nullptr));
     for (size_t col_idx = 0; col_idx < read_column_ids.size(); col_idx++) {
         _partial_update_states[idx].write_columns[col_idx]->append_selective(*read_columns[col_idx], idxes.data(), 0,
-                                                                        idxes.size());
+                                                                             idxes.size());
         _memory_usage += _partial_update_states[idx].write_columns[col_idx]->memory_usage();
     }
     int64_t t_end = MonotonicMillis();
@@ -564,7 +564,7 @@ Status RowsetUpdateState::apply(Tablet* tablet, Rowset* rowset, uint32_t rowset_
         }
     }
 
-    if (txn_meta.auto_increment_partial_update_column_id() != -1) {
+    if (txn_meta.has_auto_increment_partial_update_column_id()) {
         uint32_t id = txn_meta.auto_increment_partial_update_column_id();
         RETURN_IF_ERROR(_prepare_auto_increment_partial_update_states(tablet, rowset, segment_id, std::vector<uint32_t>(1, id)));
     }
@@ -573,7 +573,7 @@ Status RowsetUpdateState::apply(Tablet* tablet, Rowset* rowset, uint32_t rowset_
     auto dest_path = Rowset::segment_temp_file_path(tablet->schema_hash_path(), rowset->rowset_id(), segment_id);
     DeferOp clean_temp_files([&] { FileSystem::Default()->delete_file(dest_path); });
     int64_t t_rewrite_start = MonotonicMillis();
-    if (txn_meta.auto_increment_partial_update_column_id() != -1 &&
+    if (txn_meta.has_auto_increment_partial_update_column_id() &&
         !(_partial_update_states.size() == 0 && _auto_increment_partial_update_states[segment_id].skip_rewrite)) {
         RETURN_IF_ERROR(SegmentRewriter::rewrite(src_path, dest_path, tablet->tablet_schema(), _auto_increment_partial_update_states[segment_id],
                                                  read_column_ids, _partial_update_states.size() != 0 ? &_partial_update_states[segment_id].write_columns :
@@ -603,7 +603,7 @@ Status RowsetUpdateState::apply(Tablet* tablet, Rowset* rowset, uint32_t rowset_
         }
         _partial_update_states[segment_id].release();
     }
-    if (txn_meta.auto_increment_partial_update_column_id() != -1) {
+    if (txn_meta.has_auto_increment_partial_update_column_id()) {
         _auto_increment_partial_update_states[segment_id].release();
     }
     return Status::OK();
