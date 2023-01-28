@@ -1353,7 +1353,7 @@ Status OlapTableSink::_fill_auto_increment_id(Chunk* chunk) {
     _auto_increment_slot_id = -1;
     _has_auto_increment = false;
 
-    for (auto &slot : _output_tuple_desc->slots()) {
+    for (auto& slot : _output_tuple_desc->slots()) {
         if (slot->is_auto_increment()) {
             RETURN_IF_ERROR(_fill_auto_increment_id_internal(chunk, slot, _schema->table_id()));
             break;
@@ -1363,7 +1363,7 @@ Status OlapTableSink::_fill_auto_increment_id(Chunk* chunk) {
     return Status::OK();
 }
 
-Status OlapTableSink::_fill_auto_increment_id_internal(Chunk* chunk, SlotDescriptor *slot, int64_t table_id) {
+Status OlapTableSink::_fill_auto_increment_id_internal(Chunk* chunk, SlotDescriptor* slot, int64_t table_id) {
     ColumnPtr& col = chunk->get_column_by_slot_id(slot->id());
     Status st;
 
