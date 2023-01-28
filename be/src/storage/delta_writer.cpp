@@ -229,8 +229,8 @@ Status DeltaWriter::_init() {
     auto sort_key_idxes = _tablet->tablet_schema().sort_key_idxes();
     std::sort(sort_key_idxes.begin(), sort_key_idxes.end());
     bool auto_increment_in_sort_key = false;
-    for (auto &idx : sort_key_idxes) {
-        auto &col = _tablet->tablet_schema().column(idx);
+    for (auto& idx : sort_key_idxes) {
+        auto& col = _tablet->tablet_schema().column(idx);
         if (col.is_auto_increment()) {
             auto_increment_in_sort_key = true;
             break;
@@ -596,7 +596,7 @@ Status DeltaWriter::_fill_auto_increment_id(const Chunk& chunk) {
         CHECK(false) << "create column for primary key encoder failed";
     }
     auto col = pk_column->clone();
-    
+
     PrimaryKeyEncoder::encode(pkey_schema, chunk, 0, chunk.num_rows(), col.get());
     std::unique_ptr<Column> upserts = std::move(col);
 

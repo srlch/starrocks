@@ -736,7 +736,8 @@ AgentStatus drop_auto_increment_map(TTableId table_id) {
     return STARROCKS_SUCCESS;
 }
 
-void run_drop_auto_increment_map_task(const std::shared_ptr<DropAutoIncrementMapAgentTaskRequest>& agent_task_req, ExecEnv* exec_env) {
+void run_drop_auto_increment_map_task(const std::shared_ptr<DropAutoIncrementMapAgentTaskRequest>& agent_task_req,
+                                      ExecEnv* exec_env) {
     const TDropAutoIncrementMapReq& drop_auto_increment_map_req = agent_task_req->task_req;
     LOG(INFO) << "drop auto increment map task tableid=" << drop_auto_increment_map_req.table_id;
 

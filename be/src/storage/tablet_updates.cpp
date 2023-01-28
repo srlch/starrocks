@@ -3360,14 +3360,13 @@ Status TabletUpdates::get_column_values(std::vector<uint32_t>& column_ids, bool 
         }
     }
     if (state != nullptr && with_default) {
-        AutoIncrementPartialUpdateState *auto_increment_state = (AutoIncrementPartialUpdateState*)state;
+        AutoIncrementPartialUpdateState* auto_increment_state = (AutoIncrementPartialUpdateState*)state;
         Rowset* rowset = auto_increment_state->rowset;
         uint32_t id = auto_increment_state->id;
-        const std::vector<uint32_t> &rowids = auto_increment_state->rowids;
+        const std::vector<uint32_t>& rowids = auto_increment_state->rowids;
         uint32_t segment_id = auto_increment_state->segment_id;
 
-        std::string seg_path =
-                Rowset::segment_file_path(rowset->rowset_path(), rowset->rowset_id(), segment_id);
+        std::string seg_path = Rowset::segment_file_path(rowset->rowset_path(), rowset->rowset_id(), segment_id);
         ASSIGN_OR_RETURN(auto fs, FileSystem::CreateSharedFromString(seg_path));
         auto segment = Segment::open(fs, seg_path, segment_id, auto_increment_state->schema);
         if (!segment.ok()) {

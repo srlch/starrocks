@@ -52,8 +52,7 @@ struct AutoIncrementPartialUpdateState {
     uint32_t segment_id;
     std::vector<uint32_t> rowids;
     bool skip_rewrite;
-    AutoIncrementPartialUpdateState() : rowset(nullptr), schema(nullptr),
-                                        id(0), segment_id(0), skip_rewrite(false) {}
+    AutoIncrementPartialUpdateState() : rowset(nullptr), schema(nullptr), id(0), segment_id(0), skip_rewrite(false) {}
 
     void init(Rowset* rowset, TabletSchema* schema, uint32_t id, uint32_t segment_id) {
         this->rowset = rowset;
@@ -127,7 +126,8 @@ private:
     // to avoid dead lock.
     Status _prepare_partial_update_states(Tablet* tablet, Rowset* rowset, uint32_t idx, bool need_lock);
 
-    Status _prepare_auto_increment_partial_update_states(Tablet* tablet, Rowset* rowset, uint32_t idx, std::vector<uint32_t> column_id);
+    Status _prepare_auto_increment_partial_update_states(Tablet* tablet, Rowset* rowset, uint32_t idx,
+                                                         std::vector<uint32_t> column_id);
 
     Status _check_and_resolve_conflict(Tablet* tablet, Rowset* rowset, uint32_t rowset_id, uint32_t segment_id,
                                        EditVersion latest_applied_version, std::vector<uint32_t>& read_column_ids,

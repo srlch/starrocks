@@ -89,7 +89,7 @@ void FixedLengthColumnBase<T>::fill_default(const Filter& filter) {
 }
 
 template <typename T>
-Status FixedLengthColumnBase<T>::fill_range(const Buffer<T> &ids, const std::vector<uint8_t> &filter) {
+Status FixedLengthColumnBase<T>::fill_range(const Buffer<T>& ids, const std::vector<uint8_t>& filter) {
     DCHECK_EQ(filter.size(), _data.size());
     size_t j = 0;
     for (size_t i = 0; i < _data.size(); ++i) {

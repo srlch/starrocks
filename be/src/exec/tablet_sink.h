@@ -331,7 +331,7 @@ private:
 
     Status _fill_auto_increment_id(Chunk* chunk);
 
-    Status _fill_auto_increment_id_internal(Chunk* chunk, SlotDescriptor *slot, int64_t table_id);
+    Status _fill_auto_increment_id_internal(Chunk* chunk, SlotDescriptor* slot, int64_t table_id);
 
     void mark_as_failed(const NodeChannel* ch) { _failed_channels.insert(ch->node_id()); }
     bool is_failed_channel(const NodeChannel* ch) { return _failed_channels.count(ch->node_id()) != 0; }
@@ -458,7 +458,7 @@ private:
     bool _enable_replicated_storage = false;
 
     TWriteQuorumType::type _write_quorum_type = TWriteQuorumType::MAJORITY;
-    
+
     SlotId _auto_increment_slot_id = -1;
 
     bool _has_auto_increment = false;

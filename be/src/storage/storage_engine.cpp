@@ -52,9 +52,9 @@
 #include "fs/fs_util.h"
 #include "gen_cpp/FrontendService.h"
 #include "gen_cpp/FrontendService_types.h"
+#include "runtime/client_cache.h"
 #include "runtime/current_thread.h"
 #include "runtime/exec_env.h"
-#include "runtime/client_cache.h"
 #include "storage/base_compaction.h"
 #include "storage/compaction_manager.h"
 #include "storage/data_dir.h"
@@ -74,9 +74,9 @@
 #include "util/starrocks_metrics.h"
 #include "util/stopwatch.hpp"
 #include "util/thread.h"
+#include "util/thrift_rpc_helper.h"
 #include "util/time.h"
 #include "util/trace.h"
-#include "util/thrift_rpc_helper.h"
 
 namespace starrocks {
 
@@ -1167,11 +1167,10 @@ void StorageEngine::remove_increment_map_by_table_id(int64_t table_id) {
     }
 }
 
-Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num_row,
-                                                   std::vector<int64_t> &ids) {
+Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num_row, std::vector<int64_t>& ids) {
     bool need_init = false;
-    std::pair<int64_t, int64_t> *interval;
-    std::mutex *mutex;
+    std::pair<int64_t, int64_t>* interval;
+    std::mutex* mutex;
 
     // used for delete.
     std::shared_lock delete_lock(_auto_increment_delete_mutex);
@@ -1186,7 +1185,7 @@ Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num
         _auto_increment_mutex.lock();
 
         if (_tableid_auto_increment_map.find(tableid) == _tableid_auto_increment_map.end()) {
-            _tableid_auto_increment_map.insert({tableid, new std::pair<int64_t,int64_t>({0, 0})});
+            _tableid_auto_increment_map.insert({tableid, new std::pair<int64_t, int64_t>({0, 0})});
             _tabletid_auto_increment_mutex.insert({tableid, new std::mutex()});
             need_init = true;
         }
@@ -1204,8 +1203,8 @@ Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num
     std::unique_lock<std::mutex> l(*mutex);
 
     // avaliable id interval: [cur_avaliable_min_id, cur_max_id)
-    int64_t &cur_avaliable_min_id = interval->first;
-    int64_t &cur_max_id = interval->second;
+    int64_t& cur_avaliable_min_id = interval->first;
+    int64_t& cur_max_id = interval->second;
     CHECK_GE(cur_max_id, cur_avaliable_min_id);
 
     size_t cur_avaliable_rows = cur_max_id - cur_avaliable_min_id;

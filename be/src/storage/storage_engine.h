@@ -37,6 +37,7 @@
 #include <pthread.h>
 #include <rapidjson/document.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <ctime>
 #include <list>
@@ -47,7 +48,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-#include <atomic>
 
 #include "agent/status.h"
 #include "common/status.h"
@@ -210,7 +210,7 @@ public:
 
     void increase_update_compaction_thread(const int num_threads_per_disk);
 
-    Status get_next_increment_id_interval(int64_t tableid, size_t num_row, std::vector<int64_t> &ids);
+    Status get_next_increment_id_interval(int64_t tableid, size_t num_row, std::vector<int64_t>& ids);
 
     void remove_increment_map_by_table_id(int64_t table_id);
 

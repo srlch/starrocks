@@ -35,9 +35,9 @@
 #include "exec/tablet_sink.h"
 
 #include <memory>
+#include <numeric>
 #include <sstream>
 #include <utility>
-#include <numeric>
 
 #include "column/binary_column.h"
 #include "column/chunk.h"
@@ -54,14 +54,14 @@
 #include "runtime/runtime_state.h"
 #include "serde/protobuf_serde.h"
 #include "simd/simd.h"
+#include "storage/storage_engine.h"
+#include "storage/tablet_manager.h"
 #include "types/hll.h"
 #include "util/brpc_stub_cache.h"
 #include "util/compression/compression_utils.h"
 #include "util/defer_op.h"
 #include "util/thread.h"
 #include "util/uid_util.h"
-#include "storage/storage_engine.h"
-#include "storage/tablet_manager.h"
 
 static const uint8_t VALID_SEL_FAILED = 0x0;
 static const uint8_t VALID_SEL_OK = 0x1;
@@ -1353,14 +1353,14 @@ Status OlapTableSink::_fill_auto_increment_id(Chunk* chunk) {
     _auto_increment_slot_id = -1;
     _has_auto_increment = false;
 
-     for (auto &slot : _output_tuple_desc->slots()) {
-         if (slot->is_auto_increment()) {
-             RETURN_IF_ERROR(_fill_auto_increment_id_internal(chunk, slot, _schema->table_id()));
-             break;
-         }
-     }
+    for (auto &slot : _output_tuple_desc->slots()) {
+        if (slot->is_auto_increment()) {
+            RETURN_IF_ERROR(_fill_auto_increment_id_internal(chunk, slot, _schema->table_id()));
+            break;
+        }
+    }
 
-     return Status::OK();
+    return Status::OK();
 }
 
 Status OlapTableSink::_fill_auto_increment_id_internal(Chunk* chunk, SlotDescriptor *slot, int64_t table_id) {
@@ -1623,7 +1623,7 @@ void OlapTableSink::_validate_data(RuntimeState* state, Chunk* chunk) {
             _validate_selection[j] &= 0x1;
         }
 
-        // update_column for auto increment column. 
+        // update_column for auto increment column.
         if (_has_auto_increment && _auto_increment_slot_id == desc->id() && column_ptr->is_nullable()) {
             auto* nullable = down_cast<NullableColumn*>(column_ptr.get());
             // If _null_expr_in_auto_increment == true, it means that user specify a null value in auto
@@ -1651,8 +1651,9 @@ void OlapTableSink::_validate_data(RuntimeState* state, Chunk* chunk) {
         if (desc->is_nullable() && !column_ptr->is_nullable()) {
             ColumnPtr new_column = NullableColumn::create(column_ptr, NullColumn::create(num_rows, 0));
             chunk->update_column(std::move(new_column), desc->id());
-        // Auto increment column is not nullable but use NullableColumn to implement. We should skip the check for it.
-        } else if (!desc->is_nullable() && column_ptr->is_nullable() && (!_has_auto_increment || _auto_increment_slot_id != desc->id())) {
+            // Auto increment column is not nullable but use NullableColumn to implement. We should skip the check for it.
+        } else if (!desc->is_nullable() && column_ptr->is_nullable() &&
+                   (!_has_auto_increment || _auto_increment_slot_id != desc->id())) {
             auto* nullable = down_cast<NullableColumn*>(column_ptr.get());
             // Non-nullable column shouldn't have null value,
             // If there is null value, which means expr compute has a error.
@@ -1670,7 +1671,6 @@ void OlapTableSink::_validate_data(RuntimeState* state, Chunk* chunk) {
                             state->append_error_msg_to_file(chunk->debug_row(j), ss.str());
                         }
 #endif
-                        
                     }
                 }
             }
@@ -1793,5 +1793,5 @@ Status OlapTableSink::reset_epoch(RuntimeState* state) {
     return Status::OK();
 }
 
-} // namespace starrocks::stream_load
+} // namespace stream_load
 } // namespace starrocks
