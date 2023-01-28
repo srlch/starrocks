@@ -683,6 +683,16 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
         } else if (context.NULL() != null) {
             isAllowNull = true;
         }
+        Boolean isAutoIncrement = null;
+        if (context.AUTO_INCREMENT() != null) {
+            isAutoIncrement = true;
+        }
+        if (isAutoIncrement != null && isAllowNull != null && isAllowNull == true) {
+            throw new ParsingException("AUTO_INCREMENT column must be NOT NULL ");
+        }
+        if (isAutoIncrement != null) {
+            isAllowNull = false;
+        }
         ColumnDef.DefaultValueDef defaultValueDef = ColumnDef.DefaultValueDef.NOT_SET;
         final StarRocksParser.DefaultDescContext defaultDescContext = context.defaultDesc();
         if (defaultDescContext != null) {
@@ -702,7 +712,7 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
         String comment = context.comment() == null ? "" :
                 ((StringLiteral) visit(context.comment().string())).getStringValue();
         return new ColumnDef(columnName, typeDef, charsetName, isKey, aggregateType, isAllowNull, defaultValueDef,
-                comment);
+                isAutoIncrement, comment);
     }
 
     @Override

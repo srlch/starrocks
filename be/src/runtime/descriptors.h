@@ -95,6 +95,7 @@ public:
     TupleId parent() const { return _parent; }
     bool is_materialized() const { return _is_materialized; }
     bool is_nullable() const { return _null_indicator_offset.bit_mask != 0; }
+    bool is_auto_increment() const  { return _is_auto_increment; }
 
     int slot_size() const { return _slot_size; }
 
@@ -125,6 +126,8 @@ private:
     const int _slot_size;
 
     const bool _is_materialized;
+
+    const bool _is_auto_increment;
 
     SlotDescriptor(const TSlotDescriptor& tdesc);
     SlotDescriptor(const PSlotDescriptor& pdesc);

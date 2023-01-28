@@ -59,6 +59,7 @@ import com.starrocks.common.Config;
 import com.starrocks.common.DdlException;
 import com.starrocks.common.FeConstants;
 import com.starrocks.common.FeMetaVersion;
+import com.starrocks.common.MarkedCountDownLatch;
 import com.starrocks.common.Pair;
 import com.starrocks.common.io.DeepCopy;
 import com.starrocks.common.io.Text;
@@ -74,6 +75,8 @@ import com.starrocks.system.SystemInfoService;
 import com.starrocks.task.AgentBatchTask;
 import com.starrocks.task.AgentTask;
 import com.starrocks.task.AgentTaskExecutor;
+import com.starrocks.task.AgentTaskQueue;
+import com.starrocks.task.DropAutoIncrementMapTask;
 import com.starrocks.task.DropReplicaTask;
 import com.starrocks.thrift.TCompressionType;
 import com.starrocks.thrift.TOlapTable;
@@ -102,6 +105,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.zip.Adler32;
 
@@ -200,6 +204,8 @@ public class OlapTable extends Table {
     // that is, all transactions which id is smaller than binlogTxnId have been finished/aborted,
     // then binlog is available
     protected long binlogTxnId = -1;
+    @SerializedName(value = "abortDelete")
+    protected boolean abortDelete = false;
 
     public OlapTable() {
         this(TableType.OLAP);
@@ -295,6 +301,14 @@ public class OlapTable extends Table {
     }
     public void setTableProperty(TableProperty tableProperty) {
         this.tableProperty = tableProperty;
+    }
+
+    public void setAbortDelete() {
+        this.abortDelete = true;
+    }
+
+    public boolean getAbortDelete() {
+        return this.abortDelete;
     }
 
     public TableProperty getTableProperty() {
@@ -739,6 +753,58 @@ public class OlapTable extends Table {
 
     public PartitionInfo getPartitionInfo() {
         return partitionInfo;
+    }
+
+    public void sendDropAutoIncrementMapTask() {
+        Set<Long> fullBackendId = Sets.newHashSet();
+        for (Partition partition : this.getAllPartitions()) {
+            List<MaterializedIndex> allIndices =
+                    partition.getMaterializedIndices(MaterializedIndex.IndexExtState.ALL);
+            for (MaterializedIndex materializedIndex : allIndices) {
+                for (Tablet tablet : materializedIndex.getTablets()) {
+                    List<Replica> replicas = ((LocalTablet) tablet).getImmutableReplicas();
+                    for (Replica replica : replicas) {
+                        long backendId = replica.getBackendId();
+                        fullBackendId.add(backendId);
+                    }
+                }
+            }
+        }
+
+        AgentBatchTask batchTask = new AgentBatchTask();;
+
+        for (long backendId : fullBackendId) {
+            DropAutoIncrementMapTask dropAutoIncrementMapTask = new DropAutoIncrementMapTask(backendId, this.id,
+                                                                GlobalStateMgr.getCurrentState().getNextId());
+            batchTask.addTask(dropAutoIncrementMapTask);
+        }
+
+        if (batchTask.getTaskNum() > 0) {
+            MarkedCountDownLatch<Long, Long> latch = new MarkedCountDownLatch<Long, Long>(batchTask.getTaskNum());
+            for (AgentTask task : batchTask.getAllTasks()) {
+                latch.addMark(task.getBackendId(), -1L);
+                ((DropAutoIncrementMapTask) task).setLatch(latch);
+                AgentTaskQueue.addTask(task);
+            }
+            AgentTaskExecutor.submit(batchTask);
+
+            // estimate timeout, at most 10 min
+            long timeout = 1L * 60L * 1000L;
+            boolean ok = false;
+            try {
+                LOG.info("begin to send drop auto increment map tasks to BE, total {} tasks. timeout: {}",
+                        batchTask.getTaskNum(), timeout);
+                ok = latch.await(timeout, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                LOG.warn("InterruptedException: ", e);
+            }
+
+            if (!ok) {
+                LOG.warn("drop auto increment map tasks failed");
+            }
+
+            return;
+        }
     }
 
     // partition Name -> Range

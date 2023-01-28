@@ -1323,6 +1323,7 @@ public class GlobalStateMgr {
             checksum = smallFileMgr.loadSmallFiles(dis, checksum);
             checksum = pluginMgr.loadPlugins(dis, checksum);
             checksum = loadDeleteHandler(dis, checksum);
+            checksum = localMetastore.loadAutoIncrementId(dis, checksum);
             remoteChecksum = dis.readLong();
             checksum = analyzeManager.loadAnalyze(dis, checksum);
             remoteChecksum = dis.readLong();
@@ -1638,6 +1639,7 @@ public class GlobalStateMgr {
             checksum = smallFileMgr.saveSmallFiles(dos, checksum);
             checksum = pluginMgr.savePlugins(dos, checksum);
             checksum = deleteHandler.saveDeleteHandler(dos, checksum);
+            checksum = localMetastore.saveAutoIncrementId(dos, checksum);
             dos.writeLong(checksum);
             checksum = analyzeManager.saveAnalyze(dos, checksum);
             dos.writeLong(checksum);
@@ -3421,6 +3423,22 @@ public class GlobalStateMgr {
 
     public void replayReplaceTempPartition(ReplacePartitionOperationLog replaceTempPartitionLog) {
         localMetastore.replayReplaceTempPartition(replaceTempPartitionLog);
+    }
+
+    public Long allocateAutoIncrementId(Long tableId, Long rows) {
+        return localMetastore.allocateAutoIncrementId(tableId, rows);
+    }
+
+    public void removeAutoIncrementIdByTableId(Long tableId) {
+        localMetastore.removeAutoIncrementIdByTableId(tableId);
+    }
+
+    public Long getCurrentAutoIncrementIdByTableId(Long tableId) {
+        return localMetastore.getCurrentAutoIncrementIdByTableId(tableId);
+    }
+
+    public void addOrReplaceAutoIncrementIdByTableId(Long tableId, Long id) {
+        localMetastore.addOrReplaceAutoIncrementIdByTableId(tableId, id);
     }
 
     public void installPlugin(InstallPluginStmt stmt) throws UserException, IOException {

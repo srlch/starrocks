@@ -49,6 +49,7 @@ struct TSlotDescriptor {
   8: required string colName;
   9: required i32 slotIdx
   10: required bool isMaterialized
+  11: required bool isAutoIncrement
 }
 
 struct TTupleDescriptor {
@@ -175,7 +176,8 @@ struct TColumn {
     5: optional bool is_allow_null                                                                    
     6: optional string default_value               
     7: optional bool is_bloom_filter_column     
-    8: optional Exprs.TExpr define_expr                                                               
+    8: optional Exprs.TExpr define_expr 
+    9: optional bool is_auto_increment                                                              
                                                                                                       
     // How many bytes used for short key index encoding.
     // For fixed-length column, this value may be ignored by BE when creating a tablet.

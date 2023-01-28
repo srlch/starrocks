@@ -48,6 +48,7 @@ import com.starrocks.thrift.TClearTransactionTaskRequest;
 import com.starrocks.thrift.TCloneReq;
 import com.starrocks.thrift.TCreateTabletReq;
 import com.starrocks.thrift.TDownloadReq;
+import com.starrocks.thrift.TDropAutoIncrementMapReq;
 import com.starrocks.thrift.TDropTabletReq;
 import com.starrocks.thrift.TMoveDirReq;
 import com.starrocks.thrift.TNetworkAddress;
@@ -176,12 +177,15 @@ public class AgentBatchTask implements Runnable {
                 List<AgentTask> tasks = this.backendIdToTasks.get(backendId);
                 // create AgentClient
                 address = new TNetworkAddress(backend.getHost(), backend.getBePort());
+                LOG.info("get the address ip: {}, port: {}", backend.getHost(), backend.getBePort());
                 client = ClientPool.backendPool.borrowObject(address);
+                LOG.info("borrowObject done");
                 List<TAgentTaskRequest> agentTaskRequests = new LinkedList<TAgentTaskRequest>();
                 for (AgentTask task : tasks) {
                     agentTaskRequests.add(toAgentTaskRequest(task));
                 }
                 client.submit_tasks(agentTaskRequests);
+                LOG.info("submit_tasks done");
                 if (LOG.isDebugEnabled()) {
                     for (AgentTask task : tasks) {
                         LOG.debug("send task: type[{}], backend[{}], signature[{}]",
@@ -347,6 +351,17 @@ public class AgentBatchTask implements Runnable {
                     LOG.debug(request.toString());
                 }
                 tAgentTaskRequest.setUpdate_tablet_meta_info_req(request);
+                return tAgentTaskRequest;
+            }
+            case DROP_AUTO_INCREMENT_MAP: {
+                LOG.info("DROP_AUTO_INCREMENT_MAP begin");
+                DropAutoIncrementMapTask dropAutoIncrementMapTask = (DropAutoIncrementMapTask) task;
+                TDropAutoIncrementMapReq request = dropAutoIncrementMapTask.toThrift();
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug(request.toString());
+                }
+                tAgentTaskRequest.setDrop_auto_increment_map_req(request);
+                LOG.info("DROP_AUTO_INCREMENT_MAP end");
                 return tAgentTaskRequest;
             }
             case ALTER: {

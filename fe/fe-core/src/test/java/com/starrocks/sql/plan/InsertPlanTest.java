@@ -95,6 +95,20 @@ public class InsertPlanTest extends PlanTestBase {
                 "     cardinality=1\n" +
                 "     avgRowSize=3.0\n" +
                 "     numNodes=0"));
+
+        explainString = getInsertExecPlan("insert into auto_increment_t0(id1,id2,id3) values (1,2,default)");
+        Assert.assertTrue(explainString.contains("PLAN FRAGMENT 0\n" +
+                " OUTPUT EXPRS:1: column_0 | 2: column_1 | 3: column_2\n" +
+                "  PARTITION: UNPARTITIONED\n" +
+                "\n" +
+                "  OLAP TABLE SINK\n" +
+                "    TABLE: auto_increment_t0\n" +
+                "    TUPLE ID: 1\n" +
+                "    RANDOM\n" +
+                "\n" +
+                "  0:UNION\n" +
+                "     constant exprs:\n" +
+                "         1 | 2 | NULL"));
     }
 
     @Test
