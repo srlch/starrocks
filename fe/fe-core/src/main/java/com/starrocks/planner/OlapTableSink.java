@@ -146,11 +146,13 @@ public class OlapTableSink extends DataSink {
         this.abortDelete = dstTable.getAbortDelete();
 
         this.autoIncrementSlotId = -1;
-        for (int i = 0; i < this.tupleDescriptor.getSlots().size(); ++i) {
-            SlotDescriptor slot = this.tupleDescriptor.getSlots().get(i);
-            if (slot.getColumn().isAutoIncrement()) {
-                this.autoIncrementSlotId = i;
-                break;
+        if (tupleDescriptor != null) {
+            for (int i = 0; i < this.tupleDescriptor.getSlots().size(); ++i) {
+                SlotDescriptor slot = this.tupleDescriptor.getSlots().get(i);
+                if (slot.getColumn().isAutoIncrement()) {
+                    this.autoIncrementSlotId = i;
+                    break;
+                }
             }
         }
     }

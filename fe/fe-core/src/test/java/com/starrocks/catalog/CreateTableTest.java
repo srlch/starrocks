@@ -44,6 +44,7 @@ import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.ast.AlterTableStmt;
 import com.starrocks.sql.ast.CreateDbStmt;
 import com.starrocks.sql.ast.CreateTableStmt;
+import com.starrocks.sql.parser.ParsingException;
 import com.starrocks.system.Backend;
 import com.starrocks.utframe.StarRocksAssert;
 import com.starrocks.utframe.UtFrameUtils;
@@ -156,7 +157,7 @@ public class CreateTableTest {
                         + "properties('replication_num' = '1', 'replicated_storage' = 'true');"));
 
         ExceptionChecker
-                .expectThrowsNoException(() -> createTable("create table test.tb12(col1 bigint, col2 bigint AUTO_INCREMENT) \n"
+                .expectThrowsNoException(() -> createTable("create table test.tb13(col1 bigint, col2 bigint AUTO_INCREMENT) \n"
                         + "Primary KEY (col1) distributed by hash(col1) buckets 1 \n"
                         + "properties('replication_num' = '1', 'replicated_storage' = 'true');"));
 
@@ -229,19 +230,20 @@ public class CreateTableTest {
                                 + "properties('replication_num' = '1', 'compression' = 'xxx');"));
 
         ExceptionChecker
-                .expectThrowsWithMsg(DdlException.class, "The AUTO_INCREMENT column must be BIGINT",
+                .expectThrowsWithMsg(IllegalArgumentException.class, "The AUTO_INCREMENT column must be BIGINT",
                         () -> createTable("create table test.atbl9(col1 int AUTO_INCREMENT, col2 varchar(10)) \n"
                                 + "Primary KEY (col1) distributed by hash(col1) buckets 1 \n"
                                 + "properties('replication_num' = '1', 'replicated_storage' = 'true');"));
 
         ExceptionChecker
-                .expectThrowsWithMsg(DdlException.class, "AUTO_INCREMENT column must be NOT NULL",
+                .expectThrowsWithMsg(ParsingException.class, "AUTO_INCREMENT column must be NOT NULL",
                         () -> createTable("create table test.atbl10(col1 bigint NULL AUTO_INCREMENT, col2 varchar(10)) \n"
                                 + "Primary KEY (col1) distributed by hash(col1) buckets 1 \n"
                                 + "properties('replication_num' = '1', 'replicated_storage' = 'true');"));
 
         ExceptionChecker
-                .expectThrowsWithMsg(DdlException.class, "More than one AUTO_INCREMENT column defined in CREATE TABLE Statement",
+                .expectThrowsWithMsg(IllegalArgumentException.class,
+                        "More than one AUTO_INCREMENT column defined in CREATE TABLE Statement",
                         () -> createTable("create table test.atbl11(col1 bigint AUTO_INCREMENT, col2 bigint AUTO_INCREMENT) \n"
                                 + "Primary KEY (col1) distributed by hash(col1) buckets 1 \n"
                                 + "properties('replication_num' = '1', 'replicated_storage' = 'true');"));
