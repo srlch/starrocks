@@ -579,7 +579,7 @@ Status RowsetUpdateState::apply(Tablet* tablet, Rowset* rowset, uint32_t rowset_
     DeferOp clean_temp_files([&] { FileSystem::Default()->delete_file(dest_path); });
     int64_t t_rewrite_start = MonotonicMillis();
     if (txn_meta.has_auto_increment_partial_update_column_id() &&
-        !(_partial_update_states.size() == 0 && _auto_increment_partial_update_states[segment_id].skip_rewrite)) {
+        !_auto_increment_partial_update_states[segment_id].skip_rewrite) {
         RETURN_IF_ERROR(SegmentRewriter::rewrite(
                 src_path, dest_path, tablet->tablet_schema(), _auto_increment_partial_update_states[segment_id],
                 read_column_ids,
