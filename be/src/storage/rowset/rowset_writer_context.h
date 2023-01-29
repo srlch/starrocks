@@ -85,7 +85,7 @@ public:
 
     std::string merge_condition;
 
-    bool miss_auto_increment_column_id = false;
+    bool miss_auto_increment_column = false;
 
     bool abort_delete = false;
 };

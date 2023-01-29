@@ -253,7 +253,7 @@ Status DeltaWriter::_init() {
     writer_context.load_id = _opt.load_id;
     writer_context.segments_overlap = OVERLAPPING;
     writer_context.global_dicts = _opt.global_dicts;
-    writer_context.miss_auto_increment_column_id = _opt.miss_auto_increment_column;
+    writer_context.miss_auto_increment_column = _opt.miss_auto_increment_column;
     writer_context.abort_delete = _opt.abort_delete;
     Status st = RowsetFactory::create_rowset_writer(writer_context, &_rowset_writer);
     if (!st.ok()) {

@@ -120,7 +120,7 @@ Status RowsetWriter::init() {
 
     if (_context.tablet_schema->keys_type() == KeysType::PRIMARY_KEYS &&
         (_context.partial_update_tablet_schema || !_context.merge_condition.empty() ||
-         _context.miss_auto_increment_column_id)) {
+         _context.miss_auto_increment_column)) {
         _rowset_txn_meta_pb = std::make_unique<RowsetTxnMetaPB>();
     }
 
@@ -164,7 +164,7 @@ StatusOr<RowsetSharedPtr> RowsetWriter::build() {
             if (!_context.merge_condition.empty()) {
                 _rowset_txn_meta_pb->set_merge_condition(_context.merge_condition);
             }
-            if (_context.miss_auto_increment_column_id) {
+            if (_context.miss_auto_increment_column) {
                 for (auto i = 0; i < _context.tablet_schema->num_columns(); ++i) {
                     auto col = _context.tablet_schema->column(i);
                     if (col.is_auto_increment()) {
@@ -177,7 +177,7 @@ StatusOr<RowsetSharedPtr> RowsetWriter::build() {
         } else if (!_context.merge_condition.empty()) {
             _rowset_txn_meta_pb->set_merge_condition(_context.merge_condition);
             *_rowset_meta_pb->mutable_txn_meta() = *_rowset_txn_meta_pb;
-        } else if (_context.miss_auto_increment_column_id) {
+        } else if (_context.miss_auto_increment_column) {
             for (auto i = 0; i < _context.tablet_schema->num_columns(); ++i) {
                 auto col = _context.tablet_schema->column(i);
                 if (col.is_auto_increment()) {
