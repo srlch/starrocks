@@ -44,7 +44,6 @@ import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.ast.AlterTableStmt;
 import com.starrocks.sql.ast.CreateDbStmt;
 import com.starrocks.sql.ast.CreateTableStmt;
-import com.starrocks.sql.parser.ParsingException;
 import com.starrocks.system.Backend;
 import com.starrocks.utframe.StarRocksAssert;
 import com.starrocks.utframe.UtFrameUtils;
@@ -236,7 +235,7 @@ public class CreateTableTest {
                                 + "properties('replication_num' = '1', 'replicated_storage' = 'true');"));
 
         ExceptionChecker
-                .expectThrowsWithMsg(ParsingException.class, "AUTO_INCREMENT column must be NOT NULL",
+                .expectThrowsWithMsg(AnalysisException.class, "AUTO_INCREMENT column must be NOT NULL",
                         () -> createTable("create table test.atbl10(col1 bigint NULL AUTO_INCREMENT, col2 varchar(10)) \n"
                                 + "Primary KEY (col1) distributed by hash(col1) buckets 1 \n"
                                 + "properties('replication_num' = '1', 'replicated_storage' = 'true');"));
