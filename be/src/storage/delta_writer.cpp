@@ -585,7 +585,7 @@ const char* DeltaWriter::_replica_state_name(ReplicaState state) const {
 }
 
 Status DeltaWriter::_fill_auto_increment_id(const Chunk& chunk) {
-    // probe index
+    // 1. get pk column from chunk
     vector<uint32_t> pk_columns;
     for (size_t i = 0; i < _tablet_schema->num_key_columns(); i++) {
         pk_columns.push_back((uint32_t)i);
@@ -603,6 +603,7 @@ Status DeltaWriter::_fill_auto_increment_id(const Chunk& chunk) {
     std::vector<uint64_t> rss_rowids;
     rss_rowids.resize(upserts->size());
 
+    // 2. probe index
     _tablet->updates()->prepare_partial_update_states(_tablet.get(), upserts, nullptr, &rss_rowids);
 
     std::vector<uint8_t> filter;
@@ -618,6 +619,7 @@ Status DeltaWriter::_fill_auto_increment_id(const Chunk& chunk) {
         }
     }
 
+    // 3. fill the non-existing rows
     std::vector<int64_t> ids(gen_num);
     int64_t table_id = _tablet->tablet_meta()->table_id();
     RETURN_IF_ERROR(StorageEngine::instance()->get_next_increment_id_interval(table_id, gen_num, ids));
