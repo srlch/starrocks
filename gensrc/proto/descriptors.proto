@@ -51,7 +51,6 @@ message PSlotDescriptor {
     required int32 slot_idx = 9;
     required bool is_materialized = 10;
     repeated string global_dict_words = 11; 
-    required bool is_auto_increment = 12;
 };
 
 message PTupleDescriptor {

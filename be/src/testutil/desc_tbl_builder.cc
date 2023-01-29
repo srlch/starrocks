@@ -69,7 +69,6 @@ static TSlotDescriptor make_slot_descriptor(int id, int parent_id, const TypeDes
     slot_desc.__set_nullIndicatorBit(null_bit);
     slot_desc.__set_slotIdx(slot_idx);
     slot_desc.__set_isMaterialized(true);
-    slot_desc.__set_isAutoIncrement(false);
     // if (item_id != -1) {
     //     slot_desc.__set_itemTupleId(item_id);
     // }

@@ -231,9 +231,6 @@ public class LoadingTaskPlanner {
         List<Long> partitionIds = getAllPartitionIds();
         OlapTableSink olapTableSink = new OlapTableSink(table, tupleDesc, partitionIds, true,
                 table.writeQuorum(), table.enableReplicatedStorage(), checkNullExprInAutoIncrement());
-        if (this.missAutoIncrementColumn == Boolean.TRUE) {
-            olapTableSink.setMissAutoIncrementColumn();
-        }
         olapTableSink.init(loadId, txnId, dbId, timeoutS);
         Load.checkMergeCondition(mergeConditionStr, table, false);
         olapTableSink.complete(mergeConditionStr);

@@ -266,7 +266,7 @@ public class SlotDescriptor {
             return new TSlotDescriptor(id.asInt(), parent.getId().asInt(), originType.toThrift(), -1,
                     byteOffset, nullIndicatorByte,
                     nullIndicatorBit, ((column != null) ? column.getName() : ""),
-                    slotIdx, isMaterialized, ((column != null) ? column.isAutoIncrement() : false));
+                    slotIdx, isMaterialized);
         } else {
             /**
              * Refer to {@link Expr#treeToThrift}
@@ -277,7 +277,7 @@ public class SlotDescriptor {
             return new TSlotDescriptor(id.asInt(), parent.getId().asInt(), type.toThrift(), -1,
                     byteOffset, nullIndicatorByte,
                     nullIndicatorBit, ((column != null) ? column.getName() : ""),
-                    slotIdx, isMaterialized, ((column != null) ? column.isAutoIncrement() : false));
+                    slotIdx, isMaterialized);
         }
     }
 

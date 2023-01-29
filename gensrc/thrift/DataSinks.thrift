@@ -185,6 +185,7 @@ struct TOlapTableSink {
     21: optional bool null_expr_in_auto_increment
     22: optional bool miss_auto_increment_column
     23: optional bool abort_delete
+    24: optional i32 auto_increment_slot_id;
 }
 
 struct TDataSink {

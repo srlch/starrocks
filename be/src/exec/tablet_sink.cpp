@@ -822,6 +822,7 @@ Status OlapTableSink::init(const TDataSink& t_sink, RuntimeState* state) {
     _null_expr_in_auto_increment = table_sink.null_expr_in_auto_increment;
     _miss_auto_increment_column = table_sink.miss_auto_increment_column;
     _abort_delete = table_sink.abort_delete;
+    _auto_increment_slot_id = table_sink.auto_increment_slot_id;
     if (table_sink.__isset.write_quorum_type) {
         _write_quorum_type = table_sink.write_quorum_type;
     }
@@ -1350,15 +1351,13 @@ Status OlapTableSink::try_close(RuntimeState* state) {
 }
 
 Status OlapTableSink::_fill_auto_increment_id(Chunk* chunk) {
-    _auto_increment_slot_id = -1;
-    _has_auto_increment = false;
-
-    for (auto& slot : _output_tuple_desc->slots()) {
-        if (slot->is_auto_increment()) {
-            RETURN_IF_ERROR(_fill_auto_increment_id_internal(chunk, slot, _schema->table_id()));
-            break;
-        }
+    if (_auto_increment_slot_id == -1) {
+        return Status::OK();
     }
+    _has_auto_increment = true;
+
+    auto& slot = _output_tuple_desc->slots()[_auto_increment_slot_id];
+    RETURN_IF_ERROR(_fill_auto_increment_id_internal(chunk, slot, _schema->table_id()));
 
     return Status::OK();
 }
@@ -1374,9 +1373,6 @@ Status OlapTableSink::_fill_auto_increment_id_internal(Chunk* chunk, SlotDescrip
     if (!col->is_nullable()) {
         return Status::OK();
     }
-
-    _auto_increment_slot_id = slot->id();
-    _has_auto_increment = true;
 
     ColumnPtr& data_col = std::dynamic_pointer_cast<NullableColumn>(col)->data_column();
     std::vector<uint8_t> filter(std::dynamic_pointer_cast<NullableColumn>(col)->immutable_null_column_data());
