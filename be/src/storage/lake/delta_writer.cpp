@@ -25,6 +25,7 @@
 #include "runtime/exec_env.h"
 #include "runtime/mem_tracker.h"
 #include "storage/lake/filenames.h"
+#include "storage/lake/meta_file.h"
 #include "storage/lake/tablet.h"
 #include "storage/lake/tablet_manager.h"
 #include "storage/lake/tablet_writer.h"
@@ -32,6 +33,7 @@
 #include "storage/memtable.h"
 #include "storage/memtable_flush_executor.h"
 #include "storage/memtable_sink.h"
+#include "storage/primary_key_encoder.h"
 #include "storage/storage_engine.h"
 
 namespace starrocks::lake {
@@ -79,7 +81,10 @@ public:
               _slots(option.slots),
               _max_buffer_size(option.max_buffer_size),
               _schema_initialized(false),
-              _merge_condition(option.merge_condition) {}
+              _merge_condition(option.merge_condition),
+              _miss_auto_increment_column(option.miss_auto_increment_column),
+              _abort_delete(option.abort_delete),
+              _table_id(option.table_id) {}
 
     ~DeltaWriterImpl() = default;
 
@@ -113,6 +118,8 @@ public:
 private:
     Status reset_memtable();
 
+    Status _fill_auto_increment_id(const Chunk& chunk);
+
     TabletManager* _tablet_manager;
     const int64_t _tablet_id;
     const int64_t _txn_id;
@@ -139,6 +146,11 @@ private:
 
     // for condition update
     std::string _merge_condition;
+
+    // for auto increment
+    bool _miss_auto_increment_column;
+    bool _abort_delete;
+    const int64_t _table_id;
 };
 
 Status DeltaWriterImpl::build_schema_and_writer() {
@@ -170,6 +182,7 @@ inline Status DeltaWriterImpl::reset_memtable() {
         _mem_table = std::make_unique<MemTable>(_tablet_id, &_vectorized_schema, _mem_table_sink.get(),
                                                 _max_buffer_size, _mem_tracker);
     }
+    _mem_table->set_abort_delete(_abort_delete);
     return Status::OK();
 }
 
@@ -177,6 +190,9 @@ inline Status DeltaWriterImpl::flush_async() {
     Status st;
     if (_mem_table != nullptr) {
         RETURN_IF_ERROR(_mem_table->finalize());
+        if (_miss_auto_increment_column && _mem_table->get_result_chunk() != nullptr) {
+            _fill_auto_increment_id(*_mem_table->get_result_chunk());
+        }
         st = _flush_token->submit(std::move(_mem_table));
         _mem_table.reset(nullptr);
     }
@@ -249,6 +265,22 @@ Status DeltaWriterImpl::handle_partial_update() {
         }
         _tablet_schema = _partial_update_tablet_schema;
     }
+
+    auto sort_key_idxes = _tablet_schema->sort_key_idxes();
+    std::sort(sort_key_idxes.begin(), sort_key_idxes.end());
+    bool auto_increment_in_sort_key = false;
+    for (auto& idx : sort_key_idxes) {
+        auto& col = _tablet_schema->column(idx);
+        if (col.is_auto_increment()) {
+            auto_increment_in_sort_key = true;
+            break;
+        }
+    }
+
+    if (auto_increment_in_sort_key && _miss_auto_increment_column) {
+        LOG(WARNING) << "table with sort key do not support partial update";
+        return Status::NotSupported("table with sort key do not support partial update");
+    }
     return Status::OK();
 }
 
@@ -301,7 +333,81 @@ Status DeltaWriterImpl::finish() {
     if (_merge_condition != "") {
         op_write->mutable_txn_meta()->set_merge_condition(_merge_condition);
     }
+    // handle auto increment
+    if (_miss_auto_increment_column) {
+        for (auto i = 0; i < _tablet_schema->num_columns(); ++i) {
+            auto col = _tablet_schema->column(i);
+            if (col.is_auto_increment()) {
+                op_write->mutable_txn_meta()->set_auto_increment_partial_update_column_id(i);
+                break;
+            }
+        }
+    }
     RETURN_IF_ERROR(tablet.put_txn_log(std::move(txn_log)));
+    return Status::OK();
+}
+
+Status DeltaWriterImpl::_fill_auto_increment_id(const Chunk& chunk) {
+    ASSIGN_OR_RETURN(auto tablet, _tablet_manager->get_tablet(_tablet_id));
+    
+    // 1. get pk column from chunk
+    vector<uint32_t> pk_columns;
+    for (size_t i = 0; i < _tablet_schema->num_key_columns(); i++) {
+        pk_columns.push_back((uint32_t)i);
+    }
+    Schema pkey_schema = ChunkHelper::convert_schema(*_tablet_schema, pk_columns);
+    std::unique_ptr<Column> pk_column;
+    if (!PrimaryKeyEncoder::create_column(pkey_schema, &pk_column).ok()) {
+        CHECK(false) << "create column for primary key encoder failed";
+    }
+    auto col = pk_column->clone();
+
+    PrimaryKeyEncoder::encode(pkey_schema, chunk, 0, chunk.num_rows(), col.get());
+    std::vector<std::unique_ptr<Column>> upserts;
+    upserts.resize(1);
+    upserts[0] = std::move(col);
+
+    std::vector<uint64_t> rss_rowid_map;
+    rss_rowid_map.resize(upserts[0]->size());
+    std::vector<std::vector<uint64_t>*> rss_rowids;
+    rss_rowids.resize(1);
+    rss_rowids[0] = &rss_rowid_map;
+
+    // 2. probe index
+    int64_t version = tablet.update_mgr()->get_version();
+    auto res = tablet.get_metadata(version);
+    auto metadata = std::make_shared<TabletMetadata>(*res.value());
+    metadata->set_version(version + 1);
+    std::unique_ptr<MetaFileBuilder> builder = std::make_unique<MetaFileBuilder>(metadata, tablet.update_mgr());
+
+    tablet.update_mgr()->get_rowids_from_pkindex(&tablet, *metadata.get(), upserts, version, builder.get(), &rss_rowids);
+
+    std::vector<uint8_t> filter;
+    uint32_t gen_num = 0;
+    for (uint32_t i = 0; i < rss_rowid_map.size(); i++) {
+        uint64_t v = rss_rowid_map[i];
+        uint32_t rssid = v >> 32;
+        if (rssid == (uint32_t)-1) {
+            filter.emplace_back(1);
+            ++gen_num;
+        } else {
+            filter.emplace_back(0);
+        }
+    }
+
+    // 3. fill the non-existing rows
+    std::vector<int64_t> ids(gen_num);
+    RETURN_IF_ERROR(StorageEngine::instance()->get_next_increment_id_interval(_table_id, gen_num, ids));
+
+    for (int i = 0; i < _vectorized_schema.num_fields(); i++) {
+        const TabletColumn& tablet_column = _tablet_schema->column(i);
+        if (tablet_column.is_auto_increment()) {
+            auto& column = chunk.get_column_by_index(i);
+            RETURN_IF_ERROR((std::dynamic_pointer_cast<Int64Column>(column))->fill_range(ids, filter));
+            break;
+        }
+    }
+
     return Status::OK();
 }
 

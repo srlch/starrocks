@@ -37,9 +37,12 @@ struct LakeDeltaWriterOptions {
     int64_t tablet_id = -1;
     int64_t txn_id = -1;
     int64_t partition_id = -1;
+    int64_t table_id = -1;
     int64_t max_buffer_size = config::write_buffer_size;
     const std::vector<SlotDescriptor*>* slots = nullptr;
     std::string merge_condition;
+    bool miss_auto_increment_column = false;
+    bool abort_delete = false;
 };
 
 class DeltaWriter {

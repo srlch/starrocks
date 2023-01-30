@@ -152,6 +152,9 @@ Status UpdateManager::publish_primary_key_tablet(const TxnLogPB_OpWrite& op_writ
             tablet->id(), rowset_id, upserts.size(), state.deletes().size(), new_del, total_del, base_version,
             metadata.version(), cost_str.str());
 
+    // 6. set the applied version used for auto increment
+    tablet->update_mgr()->set_version(base_version);
+
     return Status::OK();
 }
 
@@ -267,12 +270,13 @@ Status UpdateManager::get_column_values(Tablet* tablet, const TabletMetadata& me
                                         const TxnLogPB_OpWrite& op_write, const TabletSchema& tablet_schema,
                                         std::vector<uint32_t>& column_ids, bool with_default,
                                         std::map<uint32_t, std::vector<uint32_t>>& rowids_by_rssid,
-                                        vector<std::unique_ptr<Column>>* columns) {
+                                        vector<std::unique_ptr<Column>>* columns,
+                                        void* state) {
     std::stringstream cost_str;
     MonotonicStopWatch watch;
     watch.start();
 
-    if (with_default) {
+    if (with_default && state == nullptr) {
         for (auto i = 0; i < column_ids.size(); ++i) {
             const TabletColumn& tablet_column = tablet_schema.column(column_ids[i]);
             if (tablet_column.has_default_value()) {
@@ -316,6 +320,32 @@ Status UpdateManager::get_column_values(Tablet* tablet, const TabletMetadata& me
         OlapReaderStatistics stats;
         iter_opts.stats = &stats;
         ASSIGN_OR_RETURN(auto read_file, fs->new_random_access_file(path));
+        iter_opts.read_file = read_file.get();
+        for (auto i = 0; i < column_ids.size(); ++i) {
+            ASSIGN_OR_RETURN(auto col_iter, (*segment)->new_column_iterator(column_ids[i]));
+            RETURN_IF_ERROR(col_iter->init(iter_opts));
+            RETURN_IF_ERROR(col_iter->fetch_values_by_rowid(rowids.data(), rowids.size(), (*columns)[i].get()));
+        }
+    }
+    if (state != nullptr && with_default) {
+        AutoIncrementPartialUpdateState* auto_increment_state = (AutoIncrementPartialUpdateState*)state;
+        uint32_t segment_id = auto_increment_state->segment_id;
+        const std::vector<uint32_t>& rowids = auto_increment_state->rowids;
+
+        std::string seg_path = tablet->segment_location(op_write.rowset().segments(segment_id));
+        auto segment = Segment::open(fs, seg_path, segment_id, auto_increment_state->schema);
+        if (!segment.ok()) {
+            LOG(WARNING) << "Fail to open " << seg_path << ": " << segment.status();
+            return segment.status();
+        }
+        if ((*segment)->num_rows() == 0) {
+            return Status::OK();
+        }
+
+        ColumnIteratorOptions iter_opts;
+        OlapReaderStatistics stats;
+        iter_opts.stats = &stats;
+        ASSIGN_OR_RETURN(auto read_file, fs->new_random_access_file((*segment)->file_name()));
         iter_opts.read_file = read_file.get();
         for (auto i = 0; i < column_ids.size(); ++i) {
             ASSIGN_OR_RETURN(auto col_iter, (*segment)->new_column_iterator(column_ids[i]));

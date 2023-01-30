@@ -379,8 +379,11 @@ Status LakeTabletsChannel::_create_delta_writers(const PTabletWriterOpenRequest&
         option.tablet_id = tablet.tablet_id();
         option.txn_id = _txn_id;
         option.partition_id = tablet.partition_id();
+        option.table_id = params.table_id();
         option.slots = slots;
         option.merge_condition = params.merge_condition();
+        option.miss_auto_increment_column = params.miss_auto_increment_column();
+        option.abort_delete = params.abort_delete();
         auto writer = AsyncDeltaWriter::create(option, _tablet_manager, _mem_tracker);
         _delta_writers.emplace(tablet.tablet_id(), std::move(writer));
         tablet_ids.emplace_back(tablet.tablet_id());

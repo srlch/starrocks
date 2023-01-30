@@ -195,6 +195,7 @@ void NodeChannel::_open(int64_t index_id, RefCountClosure<PTabletWriterOpenResul
     request.set_write_quorum(_write_quorum_type);
     request.set_miss_auto_increment_column(_parent->_miss_auto_increment_column);
     request.set_abort_delete(_parent->_abort_delete);
+    request.set_table_id(_parent->_schema->table_id());
     for (auto& tablet : _index_tablets_map[index_id]) {
         auto ptablet = request.add_tablets();
         ptablet->Swap(&tablet);

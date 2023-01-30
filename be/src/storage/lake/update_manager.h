@@ -70,7 +70,7 @@ public:
     Status get_column_values(Tablet* tablet, const TabletMetadata& metadata, const TxnLogPB_OpWrite& op_write,
                              const TabletSchema& tablet_schema, std::vector<uint32_t>& column_ids, bool with_default,
                              std::map<uint32_t, std::vector<uint32_t>>& rowids_by_rssid,
-                             vector<std::unique_ptr<Column>>* columns);
+                             vector<std::unique_ptr<Column>>* columns, void* state = nullptr);
     // get delvec by version
     Status get_del_vec(const TabletSegmentId& tsid, int64_t version, const MetaFileBuilder* builder,
                        DelVectorPtr* pdelvec);
@@ -102,6 +102,9 @@ public:
     void clear_cached_del_vec(const std::vector<TabletSegmentIdRange>& tsid_ranges);
     size_t cached_del_vec_size();
 
+    void set_version(int64_t version) { _version = version; }
+    int64_t get_version() { return _version; }
+
 private:
     Status _do_update(uint32_t rowset_id, int32_t upsert_idx, const std::vector<ColumnUniquePtr>& upserts,
                       PrimaryIndex& index, int64_t tablet_id, DeletesMap* new_deletes);
@@ -131,6 +134,9 @@ private:
     std::atomic<int64_t> _last_clear_expired_cache_millis{0};
 
     LocationProvider* _location_provider;
+
+    // used for auto increment
+    int64_t _version = 0;
 };
 
 } // namespace lake
