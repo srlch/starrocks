@@ -55,6 +55,7 @@
 #include "storage/rowset/rowset_writer.h"
 #include "storage/rowset/rowset_writer_context.h"
 #include "storage/rowset/segment_options.h"
+#include "storage/rowset/segment_rewriter.h"
 #include "storage/storage_engine.h"
 #include "storage/tablet_manager.h"
 #include "storage/tablet_reader.h"
@@ -913,7 +914,7 @@ TEST_F(RowsetTest, SegmentRewriterAutoIncrementTest) {
     std::vector<std::unique_ptr<SegmentPB>> seg_infos;
     {
         std::vector<uint32_t> column_indexes{0, 1, 2};
-        auto schema = ChunkHelper::convert_schema(*tablet_schema, column_indexes);
+        auto schema = ChunkHelper::convert_schema(*partial_tablet_schema, column_indexes);
         auto chunk = ChunkHelper::new_chunk(schema, chunk_size);
         for (auto i = 0; i < num_rows / chunk_size + 1; ++i) {
             chunk->reset();
@@ -953,13 +954,14 @@ TEST_F(RowsetTest, SegmentRewriterAutoIncrementTest) {
     }
 
     AutoIncrementPartialUpdateState auto_increment_partial_update_state;
-    auto_increment_partial_update_state.init(rowset, partial_tablet_schema, 2, 0);
-    auto_increment_partial_update_state.write_column.reset(write_columns[i].release());
+    auto_increment_partial_update_state.init(rowset.get(), partial_tablet_schema.get(), 2, 0);
+    auto_increment_partial_update_state.write_column.reset(write_columns[0].release());
     write_columns.erase(write_columns.begin());
     auto dst_file_name = Rowset::segment_temp_file_path(rowset->rowset_path(), rowset->rowset_id(), 0);
 
-    ASSERT_OK(SegmentRewriter::rewrite(file_name, dst_file_name, *tablet_schema, auto_increment_partial_update_state
-                                       std::vector<uint32_t>{3}, write_columns));
+    std::vector<uint32_t> column_ids{3};
+    ASSERT_OK(SegmentRewriter::rewrite(file_name, dst_file_name, *tablet_schema, auto_increment_partial_update_state,
+                                       column_ids, &write_columns));
 
     auto segment = *Segment::open(fs, dst_file_name, 0, tablet_schema.get());
     ASSERT_EQ(segment->num_rows(), num_rows);

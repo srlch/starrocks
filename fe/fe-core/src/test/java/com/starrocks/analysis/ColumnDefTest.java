@@ -129,7 +129,7 @@ public class ColumnDefTest {
         }
         {
             ColumnDef column = new ColumnDef("col", BigIntCol, "utf8", false, null, Boolean.FALSE, DefaultValueDef.NOT_SET,
-                    Boolean.FALSE, "");
+                    null, "");
             column.analyze(true);
 
             Assert.assertEquals("`col` bigint(20) NOT NULL COMMENT \"\"", column.toString());
@@ -151,7 +151,7 @@ public class ColumnDefTest {
         }
         {
             ColumnDef column = new ColumnDef("col", BigIntCol, "utf8", true, null, Boolean.FALSE, DefaultValueDef.NOT_SET,
-                    Boolean.FALSE, "");
+                    null, "");
             column.analyze(true);
 
             Assert.assertEquals("`col` bigint(20) NOT NULL COMMENT \"\"", column.toString());
