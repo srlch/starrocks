@@ -45,10 +45,14 @@
 #include <random>
 #include <set>
 
+#include "agent/master_info.h"
 #include "common/status.h"
 #include "cumulative_compaction.h"
 #include "fs/fd_cache.h"
 #include "fs/fs_util.h"
+#include "gen_cpp/FrontendService.h"
+#include "gen_cpp/FrontendService_types.h"
+#include "runtime/client_cache.h"
 #include "runtime/current_thread.h"
 #include "runtime/exec_env.h"
 #include "storage/base_compaction.h"
@@ -70,6 +74,7 @@
 #include "util/starrocks_metrics.h"
 #include "util/stopwatch.hpp"
 #include "util/thread.h"
+#include "util/thrift_rpc_helper.h"
 #include "util/time.h"
 #include "util/trace.h"
 
@@ -968,6 +973,14 @@ Status StorageEngine::_do_sweep(const std::string& scan_root, const time_t& loca
     return res;
 }
 
+Status StorageEngine::_get_remote_next_increment_id_interval(const TAllocateAutoIncrementIdParam& request,
+                                                             TAllocateAutoIncrementIdResult* result) {
+    TNetworkAddress master_addr = get_master_address();
+    return ThriftRpcHelper::rpc<FrontendServiceClient>(
+            master_addr.hostname, master_addr.port,
+            [&request, &result](FrontendServiceConnection& client) { client->allocAutoIncrementId(*result, request); });
+}
+
 double StorageEngine::delete_unused_rowset() {
     MonotonicStopWatch timer;
     timer.start();
@@ -1138,6 +1151,94 @@ void StorageEngine::increase_update_compaction_thread(const int num_threads_per_
         });
         Thread::set_thread_name(_update_compaction_threads.back(), "update_compact");
     }
+}
+
+void StorageEngine::remove_increment_map_by_table_id(int64_t table_id) {
+    std::unique_lock delete_lock(_auto_increment_delete_mutex);
+
+    if (_tableid_auto_increment_map.find(table_id) != _tableid_auto_increment_map.end()) {
+        delete _tableid_auto_increment_map[table_id];
+        _tableid_auto_increment_map.erase(_tableid_auto_increment_map.find(table_id));
+    }
+
+    if (_tabletid_auto_increment_mutex.find(table_id) != _tabletid_auto_increment_mutex.end()) {
+        delete _tabletid_auto_increment_mutex[table_id];
+        _tabletid_auto_increment_mutex.erase(_tabletid_auto_increment_mutex.find(table_id));
+    }
+}
+
+Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num_row, std::vector<int64_t>& ids) {
+    bool need_init = false;
+    std::pair<int64_t, int64_t>* interval;
+    std::mutex* mutex;
+
+    // used for delete.
+    std::shared_lock delete_lock(_auto_increment_delete_mutex);
+    // lock shared mode to check <tableid, <min,max>> exist or not.
+    _auto_increment_mutex.lock_shared();
+    auto iter = _tableid_auto_increment_map.find(tableid);
+    auto end_iter = _tableid_auto_increment_map.end();
+
+    if (UNLIKELY(iter == end_iter)) {
+        _auto_increment_mutex.unlock_shared();
+        // lock mode to add the new <tableid, <min,max>>
+        _auto_increment_mutex.lock();
+
+        if (_tableid_auto_increment_map.find(tableid) == _tableid_auto_increment_map.end()) {
+            _tableid_auto_increment_map.insert({tableid, new std::pair<int64_t, int64_t>({0, 0})});
+            _tabletid_auto_increment_mutex.insert({tableid, new std::mutex()});
+            need_init = true;
+        }
+
+        interval = _tableid_auto_increment_map.at(tableid);
+        mutex = _tabletid_auto_increment_mutex.at(tableid);
+        _auto_increment_mutex.unlock();
+    } else {
+        interval = _tableid_auto_increment_map.at(tableid);
+        mutex = _tabletid_auto_increment_mutex.at(tableid);
+        _auto_increment_mutex.unlock_shared();
+    }
+
+    // lock for different tableid
+    std::unique_lock<std::mutex> l(*mutex);
+
+    // avaliable id interval: [cur_avaliable_min_id, cur_max_id)
+    int64_t& cur_avaliable_min_id = interval->first;
+    int64_t& cur_max_id = interval->second;
+    CHECK_GE(cur_max_id, cur_avaliable_min_id);
+
+    size_t cur_avaliable_rows = cur_max_id - cur_avaliable_min_id;
+    auto ids_iter = ids.begin();
+    if (UNLIKELY(need_init || num_row > cur_avaliable_rows)) {
+        size_t alloc_rows = std::max(num_row - cur_avaliable_rows, (size_t)100000);
+        // rpc request for the new available interval from fe
+        TAllocateAutoIncrementIdParam alloc_params;
+        TAllocateAutoIncrementIdResult alloc_result;
+
+        alloc_params.__set_table_id(tableid);
+        alloc_params.__set_rows(alloc_rows);
+
+        auto st = _get_remote_next_increment_id_interval(alloc_params, &alloc_result);
+
+        if (!st.ok() || alloc_result.status.status_code != TStatusCode::OK) {
+            return Status::InternalError("auto increment allocate failed");
+        }
+
+        if (cur_avaliable_rows > 0) {
+            std::iota(ids_iter, ids_iter + cur_avaliable_rows, cur_avaliable_min_id);
+            ids_iter += cur_avaliable_rows;
+        }
+
+        cur_avaliable_min_id = alloc_result.auto_increment_id;
+        cur_max_id = alloc_result.auto_increment_id + alloc_result.allocated_rows;
+
+        num_row -= cur_avaliable_rows;
+    }
+
+    std::iota(ids_iter, ids.end(), cur_avaliable_min_id);
+    cur_avaliable_min_id += num_row;
+
+    return Status::OK();
 }
 
 DummyStorageEngine::DummyStorageEngine(const EngineOptions& options)

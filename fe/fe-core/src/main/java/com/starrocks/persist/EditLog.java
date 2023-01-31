@@ -76,6 +76,7 @@ import com.starrocks.load.routineload.RoutineLoadJob;
 import com.starrocks.load.streamload.StreamLoadTask;
 import com.starrocks.meta.MetaContext;
 import com.starrocks.metric.MetricRepo;
+import com.starrocks.persist.AutoIncrementInfo;
 import com.starrocks.plugin.PluginInfo;
 import com.starrocks.privilege.RolePrivilegeCollection;
 import com.starrocks.privilege.UserPrivilegeCollection;
@@ -195,6 +196,16 @@ public class EditLog {
                     String warehouseName = log.getWarehouseName();
                     WarehouseManager warehouseMgr = globalStateMgr.getWarehouseMgr();
                     warehouseMgr.replayDropWarehouse(warehouseName);
+                }
+                case OperationType.OP_SAVE_AUTO_INCREMENT_ID:
+                case OperationType.OP_DELETE_AUTO_INCREMENT_ID: {
+                    AutoIncrementInfo info = (AutoIncrementInfo) journal.getData();
+                    LocalMetastore metastore = globalStateMgr.getLocalMetastore();
+                    if (opCode == OperationType.OP_SAVE_AUTO_INCREMENT_ID) {
+                        metastore.replayAutoIncrementId(info);
+                    } else if (opCode == OperationType.OP_DELETE_AUTO_INCREMENT_ID) {
+                        metastore.replayDeleteAutoIncrementId(info);
+                    }
                     break;
                 }
                 case OperationType.OP_CREATE_DB: {
@@ -1128,6 +1139,13 @@ public class EditLog {
 
     public void logDropWarehouse(OpWarehouseLog log) {
         logEdit(OperationType.OP_DROP_WH, log);
+    }
+    public void logSaveAutoIncrementId(AutoIncrementInfo info) {
+        logEdit(OperationType.OP_SAVE_AUTO_INCREMENT_ID, info);
+    }
+
+    public void logSaveDeleteAutoIncrementId(AutoIncrementInfo info) {
+        logEdit(OperationType.OP_DELETE_AUTO_INCREMENT_ID, info);
     }
 
     public void logCreateDb(Database db) {

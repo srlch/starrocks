@@ -37,6 +37,7 @@
 #include <pthread.h>
 #include <rapidjson/document.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <ctime>
 #include <list>
@@ -209,6 +210,10 @@ public:
 
     void increase_update_compaction_thread(const int num_threads_per_disk);
 
+    Status get_next_increment_id_interval(int64_t tableid, size_t num_row, std::vector<int64_t>& ids);
+
+    void remove_increment_map_by_table_id(int64_t table_id);
+
 protected:
     static StorageEngine* _s_instance;
 
@@ -237,6 +242,9 @@ private:
     void _clean_unused_rowset_metas();
 
     Status _do_sweep(const std::string& scan_root, const time_t& local_tm_now, const int32_t expire);
+
+    Status _get_remote_next_increment_id_interval(const TAllocateAutoIncrementIdParam& request,
+                                                  TAllocateAutoIncrementIdResult* result);
 
     // All these xxx_callback() functions are for Background threads
     // update cache expire thread
@@ -377,6 +385,14 @@ private:
     std::unique_ptr<CompactionManager> _compaction_manager;
 
     HeartbeatFlags* _heartbeat_flags = nullptr;
+
+    std::unordered_map<int64_t, std::pair<int64_t, int64_t>*> _tableid_auto_increment_map;
+
+    std::unordered_map<int64_t, std::mutex*> _tabletid_auto_increment_mutex;
+
+    std::shared_mutex _auto_increment_mutex;
+
+    std::shared_mutex _auto_increment_delete_mutex;
 
     StorageEngine(const StorageEngine&) = delete;
     const StorageEngine& operator=(const StorageEngine&) = delete;
