@@ -367,20 +367,21 @@ Status DeltaWriterImpl::_fill_auto_increment_id(const Chunk& chunk) {
     upserts.resize(1);
     upserts[0] = std::move(col);
 
-    std::vector<uint64_t> rss_rowid_map;
-    rss_rowid_map.resize(upserts[0]->size());
+    std::vector<uint64_t> rss_rowid_map(upserts[0]->size(), (uint64_t)((uint32_t)-1) << 32);
     std::vector<std::vector<uint64_t>*> rss_rowids;
     rss_rowids.resize(1);
     rss_rowids[0] = &rss_rowid_map;
 
     // 2. probe index
     int64_t version = tablet.update_mgr()->get_version();
-    auto res = tablet.get_metadata(version);
-    auto metadata = std::make_shared<TabletMetadata>(*res.value());
-    metadata->set_version(version + 1);
-    std::unique_ptr<MetaFileBuilder> builder = std::make_unique<MetaFileBuilder>(metadata, tablet.update_mgr());
+    if (version != 0) {
+        auto res = tablet.get_metadata(version);
+        auto metadata = std::make_shared<TabletMetadata>(*res.value());
+        metadata->set_version(version + 1);
+        std::unique_ptr<MetaFileBuilder> builder = std::make_unique<MetaFileBuilder>(metadata, tablet.update_mgr());
 
-    tablet.update_mgr()->get_rowids_from_pkindex(&tablet, *metadata.get(), upserts, version, builder.get(), &rss_rowids);
+        tablet.update_mgr()->get_rowids_from_pkindex(&tablet, *metadata.get(), upserts, version, builder.get(), &rss_rowids);
+    }
 
     std::vector<uint8_t> filter;
     uint32_t gen_num = 0;

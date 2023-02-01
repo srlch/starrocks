@@ -142,7 +142,9 @@ Status RowsetUpdateState::_do_load(const TxnLogPB_OpWrite& op_write, const Table
     if (!op_write.has_txn_meta() || rowset_ptr->num_segments() == 0 || op_write.txn_meta().has_merge_condition()) {
         return Status::OK();
     }
-    RETURN_IF_ERROR(_prepare_partial_update_states(op_write, metadata, tablet, *tablet_schema));
+    if (!op_write.txn_meta().partial_update_column_ids().empty()) {
+        RETURN_IF_ERROR(_prepare_partial_update_states(op_write, metadata, tablet, *tablet_schema));
+    }
     if (op_write.txn_meta().has_auto_increment_partial_update_column_id()) {
         RETURN_IF_ERROR(_prepare_auto_increment_partial_update_states(op_write, metadata, tablet, *tablet_schema));
     }
@@ -270,11 +272,11 @@ Status RowsetUpdateState::_prepare_auto_increment_partial_update_states(const Tx
     for (size_t i = 0; i < num_segments; i++) {
         std::vector<uint32_t> rowids;
         uint32_t n = _auto_increment_partial_update_states[i].src_rss_rowids.size();
-        for (uint32_t i = 0; i < n; i++) {
-            uint64_t v = _auto_increment_partial_update_states[i].src_rss_rowids[i];
+        for (uint32_t j = 0; j < n; j++) {
+            uint64_t v = _auto_increment_partial_update_states[i].src_rss_rowids[j];
             uint32_t rssid = v >> 32;
             if (rssid == (uint32_t)-1) {
-                rowids.emplace_back(i);
+                rowids.emplace_back(j);
             }
         }
         std::swap(_auto_increment_partial_update_states[i].rowids, rowids);
