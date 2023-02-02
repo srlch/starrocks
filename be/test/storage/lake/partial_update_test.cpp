@@ -251,8 +251,8 @@ TEST_F(PartialUpdateTest, test_write) {
     // partial update
     for (int i = 0; i < 3; i++) {
         _txn_id++;
-        auto delta_writer = DeltaWriter::create(_tablet_manager.get(), tablet_id, _txn_id, _partition_id, nullptr,
-                                                _mem_tracker.get());
+        option.txn_id = _txn_id;
+        auto delta_writer = DeltaWriter::create(option, _tablet_manager.get(), _mem_tracker.get());
         delta_writer->TEST_set_partial_update(_partial_tablet_schema, _referenced_column_ids);
         ASSERT_OK(delta_writer->open());
         ASSERT_OK(delta_writer->write(chunk1, indexes.data(), indexes.size()));
