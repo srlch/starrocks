@@ -1557,7 +1557,8 @@ public class FrontendServiceImpl implements FrontendService.Iface {
 
     public TAllocateAutoIncrementIdResult allocAutoIncrementId(TAllocateAutoIncrementIdParam request) throws TException {
         TAllocateAutoIncrementIdResult result = new TAllocateAutoIncrementIdResult();
-        Long nextId = GlobalStateMgr.getCurrentState().allocateAutoIncrementId(request.table_id, request.rows);
+        long rows = request.rows + Config.auto_increment_extra_allocate_size;
+        Long nextId = GlobalStateMgr.getCurrentState().allocateAutoIncrementId(request.table_id, rows);
         try {
             // log the delta result.
             ConcurrentHashMap<Long, Long> deltaMap = new ConcurrentHashMap<>();
@@ -1574,7 +1575,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         }
 
         result.setAuto_increment_id(nextId);
-        result.setAllocated_rows(request.rows);
+        result.setAllocated_rows(rows);
 
         TStatus status = new TStatus(TStatusCode.OK);
         result.setStatus(status);

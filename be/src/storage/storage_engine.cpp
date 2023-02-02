@@ -1210,7 +1210,7 @@ Status StorageEngine::get_next_increment_id_interval(int64_t tableid, size_t num
     size_t cur_avaliable_rows = cur_max_id - cur_avaliable_min_id;
     auto ids_iter = ids.begin();
     if (UNLIKELY(need_init || num_row > cur_avaliable_rows)) {
-        size_t alloc_rows = std::max(num_row - cur_avaliable_rows, (size_t)100000);
+        size_t alloc_rows = num_row - cur_avaliable_rows;
         // rpc request for the new available interval from fe
         TAllocateAutoIncrementIdParam alloc_params;
         TAllocateAutoIncrementIdResult alloc_result;

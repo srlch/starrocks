@@ -1999,4 +1999,10 @@ public class Config extends ConfigBase {
      **/
     @ConfField(mutable = true)
     public static boolean enable_auto_tablet_distribution = false;
+
+    /**
+     * default size of extra allocated auto increment id for each request
+     **/
+    @ConfField(mutable = true)
+    public static long auto_increment_extra_allocate_size = 100000;
 }
