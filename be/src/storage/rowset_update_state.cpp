@@ -568,11 +568,17 @@ Status RowsetUpdateState::apply(Tablet* tablet, Rowset* rowset, uint32_t rowset_
         }
     }
 
+    int64_t t_auto_increment_prepare_start = MonotonicMillis();
     if (txn_meta.has_auto_increment_partial_update_column_id()) {
         uint32_t id = txn_meta.auto_increment_partial_update_column_id();
         RETURN_IF_ERROR(_prepare_auto_increment_partial_update_states(tablet, rowset, segment_id,
                                                                       std::vector<uint32_t>(1, id)));
     }
+    int64_t t_auto_increment_prepare_end = MonotonicMillis();
+    LOG(INFO) << strings::Substitute("prepare auto increment states, tablet:$0 rowset:$1 seg:$2 duration:$3ms",
+                                     tablet->tablet_id(), rowset_id, segment_id,
+                                     t_auto_increment_prepare_end - t_auto_increment_prepare_start);
+
 
     auto src_path = Rowset::segment_file_path(tablet->schema_hash_path(), rowset->rowset_id(), segment_id);
     auto dest_path = Rowset::segment_temp_file_path(tablet->schema_hash_path(), rowset->rowset_id(), segment_id);
