@@ -56,9 +56,11 @@ import com.starrocks.analysis.SlotDescriptor;
 import com.starrocks.analysis.SlotRef;
 import com.starrocks.analysis.StringLiteral;
 import com.starrocks.analysis.TupleDescriptor;
+import com.starrocks.authentication.AuthenticationManager;
 import com.starrocks.backup.BlobStorage;
 import com.starrocks.backup.Status;
 import com.starrocks.catalog.Column;
+import com.starrocks.catalog.Database;
 import com.starrocks.catalog.FunctionSet;
 import com.starrocks.catalog.KeysType;
 import com.starrocks.catalog.OlapTable;
@@ -70,9 +72,12 @@ import com.starrocks.common.FeMetaVersion;
 import com.starrocks.common.Pair;
 import com.starrocks.common.UserException;
 import com.starrocks.load.loadv2.JobState;
+import com.starrocks.privilege.PrivilegeBuiltinConstants;
+import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.ast.DataDescription;
 import com.starrocks.sql.ast.ImportColumnDesc;
+import com.starrocks.sql.ast.UserIdentity;
 import com.starrocks.thrift.TBrokerScanRangeParams;
 import com.starrocks.thrift.TOpType;
 import org.apache.logging.log4j.LogManager;
@@ -287,6 +292,26 @@ public class Load {
                 throw new DdlException("Mapping column is not in table. column: " + columnName);
             }
             mappingColumnNames.add(columnName);
+        }
+
+        // make sure that ConnectContext is available.
+        if (ConnectContext.get() == null) {
+            String dbName = "";
+            for (Map.Entry<Long, Database> entry : GlobalStateMgr.getCurrentState().getIdToDb().entrySet()) {
+                Database db = entry.getValue();
+                if (db.getTable(tbl.getId()) != null) {
+                    dbName = db.getFullName();
+                }
+            }
+
+            ConnectContext connectContext = new ConnectContext();
+            connectContext.setDatabase(dbName);
+            connectContext.setQualifiedUser(AuthenticationManager.ROOT_USER);
+            connectContext.setCurrentUserIdentity(UserIdentity.ROOT);
+            connectContext.setCurrentRoleIds(Sets.newHashSet(PrivilegeBuiltinConstants.ROOT_ROLE_ID));
+            connectContext.setGlobalStateMgr(GlobalStateMgr.getCurrentState());
+
+            connectContext.setThreadLocalInfo();
         }
 
         // We make a copy of the columnExprs so that our subsequent changes
