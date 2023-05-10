@@ -166,6 +166,7 @@ message PTabletWriterOpenRequest {
     optional string merge_condition = 26;
     optional bool miss_auto_increment_column = 27;
     optional bool abort_delete = 28;
+    optional int64 table_id = 29;
 };
 
 message PTabletWriterOpenResult {

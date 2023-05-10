@@ -122,9 +122,15 @@ public:
 
     TabletManager* tablet_mgr() { return _mgr; }
 
+    void set_version(int64_t version) { _version = version; }
+
+    int64_t get_version() { return _version; }
+
 private:
     TabletManager* _mgr;
     int64_t _id;
+    // used for auto increment
+    int64_t _version = 1;
 };
 
 } // namespace starrocks::lake

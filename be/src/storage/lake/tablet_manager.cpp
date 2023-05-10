@@ -519,6 +519,8 @@ StatusOr<double> publish(Tablet* tablet, int64_t base_version, int64_t new_versi
             LOG(WARNING) << "Fail to apply " << tablet->txn_log_location(txn_id) << ": " << st;
             return st;
         }
+        // set the new version used for auto increment
+        tablet->set_version(new_version);
     }
 
     // Apply vtxn logs for schema change
