@@ -188,11 +188,38 @@ Status SnapshotLoader::upload(const std::map<std::string, std::string>& src_to_d
             auto local_file_path = src_path + "/" + local_file;
             std::unique_ptr<WritableFile> remote_writable_file;
             WritableFileOptions opts{.sync_on_close = false, .mode = FileSystem::CREATE_OR_OPEN_WITH_TRUNCATE};
+            // new a writable file without mode = CREATE_OR_OPEN_WITH_TRUNCATE, should do as following:
+            // 1. new_writable_file, if failed goto 2
+            // 2. Try to delete the new_writable_file which is built in 1. if success, goto 3
+            // 3. Double check the existence after deleting the file. If success, goto 4
+            // 4. Try to new_writable_file again
             if (!upload.__isset.use_broker || upload.use_broker) {
                 BrokerFileSystem fs_broker(upload.broker_addr, upload.broker_prop);
-                ASSIGN_OR_RETURN(remote_writable_file, fs_broker.new_writable_file(opts, tmp_broker_file_name));
+                auto res = fs_broker.new_writable_file(opts, tmp_broker_file_name);
+                if (!res.ok()) {
+                    if (auto st = fs_broker.delete_file(tmp_broker_file_name); !st.ok()) {
+                        return Status::InternalError(st.get_error_msg());
+                    } else if (auto st = fs_broker.path_exists(tmp_broker_file_name); st.ok()) {
+                        return Status::InternalError("Double check Delete file failed, file still exist");
+                    } else {
+                        ASSIGN_OR_RETURN(remote_writable_file, fs_broker.new_writable_file(opts, tmp_broker_file_name));
+                    }
+                } else {
+                    remote_writable_file = std::move(res.value());
+                }
             } else {
-                ASSIGN_OR_RETURN(remote_writable_file, fs->new_writable_file(opts, tmp_broker_file_name));
+                auto res = fs->new_writable_file(opts, tmp_broker_file_name);
+                if (!res.ok()) {
+                    if (auto st = fs->delete_file(tmp_broker_file_name); !st.ok()) {
+                        return Status::InternalError(st.get_error_msg());
+                    } else if (auto st = fs->path_exists(tmp_broker_file_name); st.ok()) {
+                        return Status::InternalError("Double check Delete file failed, file still exist");
+                    } else {
+                        ASSIGN_OR_RETURN(remote_writable_file, fs->new_writable_file(opts, tmp_broker_file_name));
+                    }
+                } else {
+                    remote_writable_file = std::move(res.value());
+                }
             }
             ASSIGN_OR_RETURN(auto input_file, FileSystem::Default()->new_sequential_file(local_file_path));
             auto res = fs::copy(input_file.get(), remote_writable_file.get(), 1024 * 1024);

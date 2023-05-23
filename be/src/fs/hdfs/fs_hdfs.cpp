@@ -254,7 +254,7 @@ public:
 
     Status iterate_dir2(const std::string& dir, const std::function<bool(DirEntry)>& cb) override;
 
-    Status delete_file(const std::string& path) override { return Status::NotSupported("HdfsFileSystem::delete_file"); }
+    Status delete_file(const std::string& path) override;
 
     Status create_dir(const std::string& dirname) override {
         return Status::NotSupported("HdfsFileSystem::create_dir");
@@ -302,6 +302,8 @@ public:
 
 private:
     Status _path_exists(hdfsFS fs, const std::string& path);
+
+    Status _delete_file(hdfsFS fs, const std::string& path);
 
     FSOptions _options;
 };
@@ -509,6 +511,21 @@ Status HdfsFileSystem::rename_file(const std::string& src, const std::string& ta
         return Status::InvalidArgument("rename file from {} to {} error"_format(src, target));
     }
     return Status::OK();
+}
+
+Status HdfsFileSystem::_delete_file(hdfsFS fs, const std::string& path) {
+    // Rrecursive delete
+    int status = hdfsDelete(fs, path.c_str(), 1);
+    return status == 0 ? Status::OK() : Status::InternalError("hdfsDelete failed, path={}"_format(path));
+}
+
+Status HdfsFileSystem::delete_file(const std::string& path) {
+    std::string namenode;
+    RETURN_IF_ERROR(get_namenode_from_path(path, &namenode));
+    std::shared_ptr<HdfsFsClient> hdfs_client;
+    RETURN_IF_ERROR(HdfsFsCache::instance()->get_connection(namenode, hdfs_client, _options));
+
+    return _delete_file(hdfs_client->hdfs_fs, path);
 }
 
 std::unique_ptr<FileSystem> new_fs_hdfs(const FSOptions& options) {
