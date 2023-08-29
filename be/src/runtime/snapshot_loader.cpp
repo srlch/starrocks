@@ -545,6 +545,7 @@ Status SnapshotLoader::primary_key_move(const std::string& snapshot_path, const 
     TabletMetaPB metapb;
     new_tablet_meta->to_meta_pb(&metapb);
     new_tablet_meta->init_from_pb(&metapb, &snapshot_meta.tablet_meta().schema());
+    new_tablet_meta->release_updates(tablet->updates());
     tablet->set_tablet_meta(new_tablet_meta);
     tablet->save_meta();
 
