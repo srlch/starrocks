@@ -318,6 +318,10 @@ public class BackupHandler extends FrontendDaemon implements Writable {
                 }
 
                 OlapTable olapTbl = (OlapTable) tbl;
+
+                if (checkBackupObject(olapTbl, stmt)) {
+                    ErrorReport.reportDdlException(ErrorCode.ERR_INVALID_BACKUP_OBJECT, tblName, olapTbl.getType());
+                }
                 if (olapTbl.existTempPartitions()) {
                     ErrorReport.reportDdlException(ErrorCode.ERR_COMMON_ERROR,
                             "Do not support backing up table with temp partitions");
@@ -397,6 +401,25 @@ public class BackupHandler extends FrontendDaemon implements Writable {
         dbIdToBackupOrRestoreJob.put(db.getId(), backupJob);
 
         LOG.info("finished to submit backup job: {}", backupJob);
+    }
+
+    private boolean checkBackupObject(OlapTable olapTable, BackupStmt stmt) {
+        Set<String> backupObjectType = stmt.getBackupObjectType();
+        boolean available = false;
+
+        for (String objectType : backupObjectType) {
+            // TODO: support MV backup
+            switch (objectType) {
+                case "OLAP":
+                    available = olapTable.isOlapTable();
+                    break;
+                default:
+                    if (available) {
+                        break;
+                    }
+            }
+        }
+        return available;
     }
 
     private void restore(Repository repository, Database db, RestoreStmt stmt) throws DdlException {

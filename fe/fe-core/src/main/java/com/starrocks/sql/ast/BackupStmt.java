@@ -15,12 +15,14 @@
 
 package com.starrocks.sql.ast;
 
+import com.google.common.collect.ImmutableSortedSet;
 import com.starrocks.analysis.LabelName;
 import com.starrocks.analysis.TableRef;
 import com.starrocks.sql.parser.NodePosition;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class BackupStmt extends AbstractBackupStmt {
     public enum BackupType {
@@ -28,6 +30,7 @@ public class BackupStmt extends AbstractBackupStmt {
     }
 
     private BackupType type = BackupType.FULL;
+    private Set<String> backupObjectType = new ImmutableSortedSet.Builder<>(String.CASE_INSENSITIVE_ORDER).add("OLAP").build();
 
     public BackupStmt(LabelName labelName, String repoName, List<TableRef> tblRefs, Map<String, String> properties) {
         super(labelName, repoName, tblRefs, properties, NodePosition.ZERO);
@@ -52,6 +55,22 @@ public class BackupStmt extends AbstractBackupStmt {
 
     public void setType(BackupType type) {
         this.type = type;
+    }
+
+    public Set<String> getBackupObjectType() {
+        return backupObjectType;
+    }
+
+    public void addBackupObjectType(String type) {
+        backupObjectType.add(type);
+    }
+
+    public void clearBackupObjectType() {
+        backupObjectType.clear();
+    }
+
+    public void addAllBackupObjectType(Set<String> type) {
+        backupObjectType.addAll(type);
     }
 
     @Override

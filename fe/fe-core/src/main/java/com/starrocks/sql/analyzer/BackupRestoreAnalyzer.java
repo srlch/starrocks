@@ -15,6 +15,7 @@
 package com.starrocks.sql.analyzer;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.starrocks.analysis.TableName;
@@ -63,6 +64,11 @@ public class BackupRestoreAnalyzer {
         private static final String PROP_BACKUP_TIMESTAMP = "backup_timestamp";
         private static final String PROP_META_VERSION = "meta_version";
         private static final String PROP_STARROCKS_META_VERSION = "starrocks_meta_version";
+        private static final String PROP_BACKUP_OBJECT_TYPE = "backup_object_type";
+
+        // TODO: support MV backup
+        private static final Set<String> BACKUP_OBJECT_TYPE =
+                new ImmutableSortedSet.Builder<>(String.CASE_INSENSITIVE_ORDER).add("OLAP").build();
 
         public void analyze(StatementBase statement, ConnectContext session) {
             visit(statement, session);
@@ -75,6 +81,7 @@ public class BackupRestoreAnalyzer {
             analyzeLabelAndRepo(backupStmt.getLabel(), backupStmt.getRepoName());
             Map<String, TableRef> tblPartsMap = Maps.newTreeMap(String.CASE_INSENSITIVE_ORDER);
             List<TableRef> tableRefs = backupStmt.getTableRefs();
+            boolean fullDatabaseBackup = false;
             // If TableRefs is empty, it means that we do not specify any table in Backup stmt.
             // We should backup all table in current database.
             if (tableRefs.size() == 0) {
@@ -83,6 +90,7 @@ public class BackupRestoreAnalyzer {
                     TableRef tableRef = new TableRef(tableName, null, null);
                     tableRefs.add(tableRef);
                 }
+                fullDatabaseBackup = true;
             }
             for (TableRef tableRef : tableRefs) {
                 analyzeTableRef(tableRef, dbName, database, tblPartsMap, context.getCurrentCatalog());
@@ -118,10 +126,30 @@ public class BackupRestoreAnalyzer {
                         }
                         iterator.remove();
                         break;
+                    case PROP_BACKUP_OBJECT_TYPE:
+                        if (!fullDatabaseBackup) {
+                            throw new
+                                SemanticException("backup_object_type attribute can be only used for database-based backup");
+                        }
+                        for (String str : value.split(";")) {
+                            if (!BACKUP_OBJECT_TYPE.contains(str)) {
+                                ErrorReport.reportSemanticException(ErrorCode.ERR_COMMON_ERROR,
+                                        "Invalid backup object type: "
+                                            + str);
+                            }
+                            backupStmt.addBackupObjectType(str);
+                        }
                     default:
                         copiedProperties.put(next.getKey(), value);
                         break;
                 }
+            }
+            // If we specify some backup object, set
+            // all possible type for backup object in backupStmt
+            // all types are avaliable.
+            if (!fullDatabaseBackup) {
+                backupStmt.clearBackupObjectType();
+                backupStmt.addAllBackupObjectType(BACKUP_OBJECT_TYPE);
             }
 
             backupStmt.setTimeoutMs(timeoutMs);
