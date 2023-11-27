@@ -487,6 +487,9 @@ public class FunctionSet {
 
     public static final String CURRENT_ROLE = "current_role";
 
+   // dictionary cache lookup function
+   public static final String DICTIONARY_GET = "dictionary_get";
+
     private static final Logger LOGGER = LogManager.getLogger(FunctionSet.class);
 
     private static final Set<Type> STDDEV_ARG_TYPE =

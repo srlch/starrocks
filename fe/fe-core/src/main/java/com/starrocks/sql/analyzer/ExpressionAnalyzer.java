@@ -33,6 +33,7 @@ import com.starrocks.analysis.CloneExpr;
 import com.starrocks.analysis.CollectionElementExpr;
 import com.starrocks.analysis.CompoundPredicate;
 import com.starrocks.analysis.DictQueryExpr;
+import com.starrocks.analysis.DictionaryExpr;
 import com.starrocks.analysis.ExistsPredicate;
 import com.starrocks.analysis.Expr;
 import com.starrocks.analysis.ExprId;
@@ -63,6 +64,7 @@ import com.starrocks.catalog.AggregateFunction;
 import com.starrocks.catalog.ArrayType;
 import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Database;
+import com.starrocks.catalog.Dictionary;
 import com.starrocks.catalog.Function;
 import com.starrocks.catalog.FunctionSet;
 import com.starrocks.catalog.KeysType;
@@ -105,6 +107,7 @@ import com.starrocks.sql.optimizer.rewrite.ScalarOperatorEvaluator;
 import com.starrocks.sql.optimizer.transformer.ExpressionMapping;
 import com.starrocks.sql.optimizer.transformer.SqlToScalarOperatorTranslator;
 import com.starrocks.thrift.TDictQueryExpr;
+import com.starrocks.thrift.TDictionaryExpr;
 import com.starrocks.thrift.TFunctionBinaryType;
 
 import java.math.BigInteger;
@@ -1845,6 +1848,105 @@ public class ExpressionAnalyzer {
 
         @Override
         public Void visitParameterExpr(Parameter node, Scope context) {
+            return null;
+        }
+
+        public Void visitDictionaryExpr(DictionaryExpr node, Scope context) {
+            List<Expr> params = node.getParams().exprs();
+            if (params.size() < 2) {
+                throw new SemanticException("dictionary_get function get illegal param list");
+            }
+
+            if (!(params.get(0) instanceof StringLiteral)) {
+                throw new SemanticException("dictionary_get function first param dictionary_name should be string literal");
+            }
+
+            String dictionaryName = ((StringLiteral) params.get(0)).getValue();
+            if (!GlobalStateMgr.getCurrentState().getDictionaryMgr().isExist(dictionaryName)) {
+                throw new SemanticException("dictionary: " + dictionaryName + " does not exist");
+            }
+            Dictionary dictionary = GlobalStateMgr.getCurrentState().getDictionaryMgr().getDictionaryByName(dictionaryName);
+
+            if (dictionary.getState() == Dictionary.DictionaryState.CANCELLED) {
+                throw new SemanticException("dictionary: " + dictionaryName + " is in CANCELLED state");
+            }
+
+            if (dictionary.getState() == Dictionary.DictionaryState.UNINITIALIZED) {
+                throw new SemanticException("dictionary: " + dictionaryName + " is in UNINITIALIZED state");
+            }
+
+            List<String> dictionaryKeys = dictionary.getKeys();
+            int dictionaryKeysSize = dictionaryKeys.size();
+            int paramDictionaryKeysSize = params.size() - 1;
+            if (paramDictionaryKeysSize != dictionaryKeysSize) {
+                throw new SemanticException("dictionary: " + dictionaryName + " has keys size: " +
+                                            Integer.toString(dictionaryKeysSize) +
+                                            " but param give: " + Integer.toString(paramDictionaryKeysSize));
+            }
+
+            Database db = GlobalStateMgr.getCurrentState().getFullNameToDb().get(dictionary.getDbName());
+            Table table = db.getTable(dictionary.getQueryableObject());
+            if (table == null) {
+                throw new SemanticException("dict table %s is not found", table.getName());
+            }
+
+            List<Column> schema = table.getFullSchema();
+            List<Type> paramType = new ArrayList<>();
+            List<Column> keysColumn = new ArrayList<>();
+            paramType.add(Type.VARCHAR);
+            for (String key : dictionaryKeys) {
+                for (int i = 0; i < schema.size(); ++i) {
+                    if (key.equals(schema.get(i).getName())) {
+                        keysColumn.add(schema.get(i));
+                        paramType.add(schema.get(i).getType());
+                    }
+                }
+            }
+
+            List<String> dictionaryValues = dictionary.getValues();
+            List<Column> valuesColumn = new ArrayList<>();
+            for (String value : dictionaryValues) {
+                for (int i = 0; i < schema.size(); ++i) {
+                    if (value.equals(schema.get(i).getName())) {
+                        valuesColumn.add(schema.get(i));
+                    }
+                }
+            }
+
+            for (int i = 0; i < keysColumn.size(); ++i) {
+                Expr parmExpr = params.get(i + 1);
+                Column column = keysColumn.get(i);
+                if (!column.getType().equals(parmExpr.getType())) {
+                    if (!Type.canCastTo(column.getType(), parmExpr.getType())) {
+                        throw new SemanticException("column type " + column.getType().toSql()
+                                + " cast from " + parmExpr.getType().toSql() + " is invalid.");
+                    } else {
+                        parmExpr = new CastExpr(column.getType(), parmExpr);
+                        params.set(i + 1, parmExpr);
+                        node.getChildren().set(i + 1, parmExpr);
+                    }
+                }
+            }
+
+            final TDictionaryExpr dictionaryExpr = new TDictionaryExpr();
+            dictionaryExpr.setDict_id(dictionary.getDictionaryId());
+            dictionaryExpr.setTxn_id(GlobalStateMgr.getCurrentState().getDictionaryMgr().
+                    getLastSuccessTxnId(dictionary.getDictionaryId()));
+            dictionaryExpr.setKey_size(dictionary.getKeys().size());
+            
+            ArrayList<StructField> structFields = new ArrayList<>(valuesColumn.size());
+            for (Column column : valuesColumn) {
+                String fieldName = column.getName();
+                Type fieldType = column.getType();
+                structFields.add(new StructField(fieldName, fieldType));
+            }
+            StructType returnType = new StructType(structFields);
+            node.setType(returnType);
+            Function fn = new Function(FunctionName.createFnName(FunctionSet.DICTIONARY_GET), paramType, returnType, false);
+            fn.setBinaryType(TFunctionBinaryType.BUILTIN);
+            node.setFn(fn);
+
+            node.setDictionaryExpr(dictionaryExpr);
             return null;
         }
     }
