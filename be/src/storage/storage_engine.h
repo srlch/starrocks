@@ -50,12 +50,14 @@
 #include <vector>
 
 #include "agent/status.h"
+#include "column/chunk.h"
 #include "common/status.h"
 #include "gen_cpp/AgentService_types.h"
 #include "gen_cpp/BackendService_types.h"
 #include "gen_cpp/MasterService_types.h"
 #include "runtime/heartbeat_flags.h"
 #include "storage/cluster_id_mgr.h"
+#include "storage/dictionary_cache_manager.h"
 #include "storage/kv_store.h"
 #include "storage/olap_common.h"
 #include "storage/olap_define.h"
@@ -285,6 +287,8 @@ public:
 
     bool is_as_cn() { return !_options.need_write_cluster_id; }
 
+    DictionaryCacheManager* dictionary_cache_manager() { return _dictionary_cache_manager.get(); }
+
 protected:
     static StorageEngine* _s_instance;
 
@@ -473,6 +477,8 @@ private:
     std::mutex _delta_column_group_cache_lock;
     std::map<DeltaColumnGroupKey, DeltaColumnGroupList> _delta_column_group_cache;
     std::unique_ptr<MemTracker> _delta_column_group_cache_mem_tracker;
+
+    std::unique_ptr<DictionaryCacheManager> _dictionary_cache_manager = nullptr;
 };
 
 /// Load min_garbage_sweep_interval and max_garbage_sweep_interval from config,

@@ -42,10 +42,14 @@ import com.starrocks.proto.LockTabletMetadataRequest;
 import com.starrocks.proto.LockTabletMetadataResponse;
 import com.starrocks.proto.PCancelPlanFragmentRequest;
 import com.starrocks.proto.PCancelPlanFragmentResult;
+import com.starrocks.proto.PClearDictionaryCacheRequest;
+import com.starrocks.proto.PClearDictionaryCacheResult;
 import com.starrocks.proto.PCollectQueryStatisticsResult;
 import com.starrocks.proto.PExecBatchPlanFragmentsResult;
 import com.starrocks.proto.PExecPlanFragmentResult;
 import com.starrocks.proto.PFetchDataResult;
+import com.starrocks.proto.PGetDictionaryStatisticRequest;
+import com.starrocks.proto.PGetDictionaryStatisticResult;
 import com.starrocks.proto.PGetFileSchemaResult;
 import com.starrocks.proto.PListFailPointResponse;
 import com.starrocks.proto.PMVMaintenanceTaskResult;
@@ -54,6 +58,10 @@ import com.starrocks.proto.PProxyResult;
 import com.starrocks.proto.PPulsarProxyRequest;
 import com.starrocks.proto.PPulsarProxyResult;
 import com.starrocks.proto.PQueryStatistics;
+import com.starrocks.proto.PRefreshDictionaryCacheBeginRequest;
+import com.starrocks.proto.PRefreshDictionaryCacheBeginResult;
+import com.starrocks.proto.PRefreshDictionaryCacheCommitRequest;
+import com.starrocks.proto.PRefreshDictionaryCacheCommitResult;
 import com.starrocks.proto.PTabletInfo;
 import com.starrocks.proto.PTabletWithPartition;
 import com.starrocks.proto.PTabletWriterAddBatchResult;
@@ -1028,6 +1036,30 @@ public class PseudoBackend {
         @Override
         public Future<PMVMaintenanceTaskResult> submitMVMaintenanceTaskAsync(PMVMaintenanceTaskRequest request) {
             throw new org.apache.commons.lang.NotImplementedException("TODO");
+        }
+
+        @Override
+        public Future<PRefreshDictionaryCacheBeginResult> refreshDictionaryCacheBegin(
+                PRefreshDictionaryCacheBeginRequest request) {
+            return null;
+        }
+
+        @Override
+        public Future<PRefreshDictionaryCacheCommitResult> refreshDictionaryCacheCommit(
+                PRefreshDictionaryCacheCommitRequest request) {
+            return null;
+        }
+
+        @Override
+        public Future<PClearDictionaryCacheResult> clearDictionaryCache(
+                PClearDictionaryCacheRequest request) {
+            return null;
+        }
+
+        @Override
+        public Future<PGetDictionaryStatisticResult> getDictionaryStatistic(
+                PGetDictionaryStatisticRequest request) {
+            return null;
         }
 
         @Override
