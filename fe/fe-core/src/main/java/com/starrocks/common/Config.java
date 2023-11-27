@@ -2631,4 +2631,10 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = true)
     public static boolean use_lock_manager = false;
+
+    /**
+     * dictionary cache refresh task thread pool size
+     */
+    @ConfField(mutable = true)
+    public static int refresh_dictionary_cache_thread_num = 2;
 }
