@@ -101,7 +101,8 @@ Status DictionaryCacheManager::refresh(const PRefreshDictionaryCacheRequest* req
         const auto& value_slot_id = value_slot_ids[i];
         auto ori_value_column = chunk->get_column_by_slot_id(value_slot_id);
         if (ori_value_column->is_constant()) {
-            ori_value_column = ColumnHelper::unpack_and_duplicate_const_column(ori_value_column->size(), ori_value_column);
+            ori_value_column =
+                    ColumnHelper::unpack_and_duplicate_const_column(ori_value_column->size(), ori_value_column);
         }
         if (ori_value_column->is_nullable()) {
             ori_value_column = ColumnHelper::update_column_nullable(false, ori_value_column, ori_value_column->size());
