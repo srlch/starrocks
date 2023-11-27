@@ -95,6 +95,7 @@ set(RUNTIME_FILES
     iceberg_table_sink.cpp
     hive_table_sink.cpp
     table_function_table_sink.cpp
+    dictionary_cache_sink.cpp
 )
 
 set(RUNTIME_FILES ${RUNTIME_FILES}

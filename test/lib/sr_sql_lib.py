@@ -1373,3 +1373,20 @@ class StarrocksSQLApiLib(object):
             res_json = json.loads(res)
             tools.assert_dict_contains_subset({"status": "OK"}, res_json,
                                               f"failed to update be config [response={res}] [url={exec_url}]")
+
+    def wait_refresh_dictionary_finish(self, name, check_status):
+        """
+        wait dictionary refresh job finish and return status
+        """
+        status = ""
+        while True:
+            res = self.execute_sql(
+                "SHOW DICTIONARY %s" % name,
+                True,
+            )
+
+            status = res["result"][0][6]
+            if status != ("REFRESHING"):
+                break
+            time.sleep(0.5)
+        tools.assert_equal(check_status, status, "wait refresh dictionary finish error")
