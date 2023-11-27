@@ -28,6 +28,7 @@ import com.starrocks.analysis.CollectionElementExpr;
 import com.starrocks.analysis.CompoundPredicate;
 import com.starrocks.analysis.DecimalLiteral;
 import com.starrocks.analysis.DictQueryExpr;
+import com.starrocks.analysis.DictionaryExpr;
 import com.starrocks.analysis.ExistsPredicate;
 import com.starrocks.analysis.Expr;
 import com.starrocks.analysis.FunctionCallExpr;
@@ -1198,6 +1199,11 @@ public class AstToStringBuilder {
 
         @Override
         public String visitDictQueryExpr(DictQueryExpr node, Void context) {
+            return visitFunctionCall(node, context);
+        }
+
+        @Override
+        public String visitDictionaryExpr(DictionaryExpr node, Void context) {
             return visitFunctionCall(node, context);
         }
 

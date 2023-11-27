@@ -26,6 +26,7 @@ import com.starrocks.analysis.CloneExpr;
 import com.starrocks.analysis.CollectionElementExpr;
 import com.starrocks.analysis.CompoundPredicate;
 import com.starrocks.analysis.DictQueryExpr;
+import com.starrocks.analysis.DictionaryExpr;
 import com.starrocks.analysis.ExistsPredicate;
 import com.starrocks.analysis.Expr;
 import com.starrocks.analysis.FunctionCallExpr;
@@ -870,6 +871,27 @@ public abstract class AstVisitor<R, C> {
         return visitStatement(statement, context);
     }
 
+    // ------------------------------------------- Dictionary Statement ---------------------------------------------------------
+    public R visitCreateDictionaryStatement(CreateDictionaryStmt clause, C context) {
+        return visitNode(clause, context);
+    }
+
+    public R visitDropDictionaryStatement(DropDictionaryStmt clause, C context) {
+        return visitNode(clause, context);
+    }
+
+    public R visitRefreshDictionaryStatement(RefreshDictionaryStmt clause, C context) {
+        return visitNode(clause, context);
+    }
+
+    public R visitShowDictionaryStatement(ShowDictionaryStmt clause, C context) {
+        return visitNode(clause, context);
+    }
+
+    public R visitCancelRefreshDictionaryStatement(CancelRefreshDictionaryStmt clause, C context) {
+        return visitNode(clause, context);
+    }
+
     // ------------------------------------------- Unsupported statement ---------------------------------------------------------
 
     public R visitUnsupportedStatement(UnsupportedStmt statement, C context) {
@@ -1223,6 +1245,10 @@ public abstract class AstVisitor<R, C> {
     }
 
     public R visitParameterExpr(Parameter node, C context) {
+        return visitExpression(node, context);
+    }
+
+    public R visitDictionaryExpr(DictionaryExpr node, C context) {
         return visitExpression(node, context);
     }
 
