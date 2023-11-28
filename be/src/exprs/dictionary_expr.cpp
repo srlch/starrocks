@@ -17,7 +17,6 @@
 #include "column/column_helper.h"
 #include "column/struct_column.h"
 #include "storage/chunk_helper.h"
-#include "storage/dictionary_cache_manager.h"
 #include "storage/storage_engine.h"
 
 namespace starrocks {

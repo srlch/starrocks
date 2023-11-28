@@ -60,7 +60,7 @@ public:
     };
 
 private:
-    Status _send_request(const Chunk* chunk);
+    Status _send_request(ChunkPB* pchunk);
 
     Status _wait_response();
 

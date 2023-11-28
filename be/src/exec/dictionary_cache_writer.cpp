@@ -121,7 +121,13 @@ void DictionaryCacheWriter::sync_dictionary_cache(const Chunk* chunk) {
     });
 
     while (true) {
-        st = _send_request(chunk);
+        std::unique_ptr<ChunkPB> pchunk = std::make_unique<ChunkPB>();
+        st = ChunkUtil::compress_and_serialize_chunk(chunk, pchunk.get());
+        if (!st.ok()) {
+            break;
+        }
+
+        st = _send_request(pchunk.get());
         if (!st.ok()) {
             break;
         }
@@ -140,16 +146,13 @@ void DictionaryCacheWriter::sync_dictionary_cache(const Chunk* chunk) {
     }
 }
 
-Status DictionaryCacheWriter::_send_request(const Chunk* chunk) {
-    ChunkPB pchunk;
-
-    RETURN_IF_ERROR(ChunkUtil::compress_and_serialize_chunk(chunk, &pchunk));
+Status DictionaryCacheWriter::_send_request(ChunkPB* pchunk) {
     const auto& nodes = _t_dictionary_cache_sink.nodes;
     DCHECK(_closures.size() == nodes.size());
 
     for (size_t i = 0; i < nodes.size(); ++i) {
         PRefreshDictionaryCacheRequest request;
-        request.set_allocated_chunk(&pchunk);
+        request.set_allocated_chunk(pchunk);
         request.set_dictionary_id(_t_dictionary_cache_sink.dictionary_id);
         request.set_txn_id(_t_dictionary_cache_sink.txn_id);
         request.set_allocated_schema(_schema->to_protobuf());

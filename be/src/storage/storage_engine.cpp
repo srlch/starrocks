@@ -58,6 +58,7 @@
 #include "storage/base_compaction.h"
 #include "storage/compaction_manager.h"
 #include "storage/data_dir.h"
+#include "storage/dictionary_cache_manager.h"
 #include "storage/memtable_flush_executor.h"
 #include "storage/publish_version_manager.h"
 #include "storage/rowset/rowset_meta.h"

@@ -94,8 +94,8 @@ public:
             chunk->get_column_by_index(i)->append_default();
         }
 
-        ChunkPB pchunk;
-        DictionaryCacheWriter::ChunkUtil::compress_and_serialize_chunk(chunk.get(), &pchunk);
+        std::unique_ptr<ChunkPB> pchunk = std::make_unique<ChunkPB>();
+        DictionaryCacheWriter::ChunkUtil::compress_and_serialize_chunk(chunk.get(), pchunk.get());
 
         TOlapTableSchemaParam tschema;
         tschema.db_id = 1;
@@ -130,7 +130,7 @@ public:
         olap_schema.init(tschema);
 
         PRefreshDictionaryCacheRequest request;
-        request.set_allocated_chunk(&pchunk);
+        request.set_allocated_chunk(pchunk.get());
         request.set_dictionary_id(dict);
         request.set_txn_id(txn_id);
         request.set_allocated_schema(olap_schema.to_protobuf());

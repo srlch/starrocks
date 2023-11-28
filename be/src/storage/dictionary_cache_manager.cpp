@@ -269,7 +269,7 @@ void DictionaryCacheManager::get_info(DictionaryId dict_id, PGetDictionaryStatis
     response.set_dictionary_memory_usage(dictionary_memory_usage);
 }
 
-SchemaPtr DictionaryCacheManager::get_dictionary_schema_by_id(DictionaryId dict_id) {
+SchemaPtr DictionaryCacheManager::get_dictionary_schema_by_id(const DictionaryId& dict_id) {
     std::shared_lock rlock(_schema_lock);
     if (UNLIKELY(_dict_cache_schema.find(dict_id) == _dict_cache_schema.end())) {
         return nullptr;
@@ -277,8 +277,8 @@ SchemaPtr DictionaryCacheManager::get_dictionary_schema_by_id(DictionaryId dict_
     return _dict_cache_schema[dict_id];
 }
 
-StatusOr<DictionaryCachePtr> DictionaryCacheManager::get_dictionary_by_version(DictionaryId dict_id,
-                                                                               DictionaryCacheTxnId txn_id) {
+StatusOr<DictionaryCachePtr> DictionaryCacheManager::get_dictionary_by_version(const DictionaryId& dict_id,
+                                                                               const DictionaryCacheTxnId& txn_id) {
     DictionaryCachePtr dictionary = nullptr;
     {
         std::shared_lock wlock(_lock);

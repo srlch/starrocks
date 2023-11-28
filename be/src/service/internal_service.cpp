@@ -75,6 +75,7 @@
 #include "runtime/runtime_filter_worker.h"
 #include "runtime/types.h"
 #include "service/brpc.h"
+#include "storage/dictionary_cache_manager.h"
 #include "storage/storage_engine.h"
 #include "storage/txn_manager.h"
 #include "util/failpoint/fail_point.h"

@@ -259,8 +259,9 @@ public:
 
     void get_info(DictionaryId dict_id, PGetDictionaryStatisticResult& response);
 
-    SchemaPtr get_dictionary_schema_by_id(DictionaryId dict_id);
-    StatusOr<DictionaryCachePtr> get_dictionary_by_version(DictionaryId dict_id, DictionaryCacheTxnId txn_id);
+    SchemaPtr get_dictionary_schema_by_id(const DictionaryId& dict_id);
+    StatusOr<DictionaryCachePtr> get_dictionary_by_version(const DictionaryId& dict_id,
+                                                           const DictionaryCacheTxnId& txn_id);
 
     inline static Status probe_given_dictionary_cache(const Schema& key_schema, const Schema& value_schema,
                                                       DictionaryCachePtr dictionary, const ChunkPtr& key_chunk,
