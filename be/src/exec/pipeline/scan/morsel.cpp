@@ -409,7 +409,7 @@ Status PhysicalSplitMorselQueue::_init_segment() {
         if (0 == _rowset_idx) {
             _tablet_seek_ranges.clear();
             _mempool.clear();
-            RETURN_IF_ERROR(TabletReader::parse_seek_range(_tablets[_tablet_idx], _range_start_op, _range_end_op,
+            RETURN_IF_ERROR(TabletReader::parse_seek_range(_tablets[_tablet_idx]->tablet_schema(), _range_start_op, _range_end_op,
                                                            _range_start_key, _range_end_key, &_tablet_seek_ranges,
                                                            &_mempool));
         }
@@ -733,7 +733,7 @@ Status LogicalSplitMorselQueue::_init_tablet() {
 
     if (_tablet_idx == 0) {
         // All the tablets have the same schema, so parse seek range with the first table schema.
-        RETURN_IF_ERROR(TabletReader::parse_seek_range(_tablets[_tablet_idx], _range_start_op, _range_end_op,
+        RETURN_IF_ERROR(TabletReader::parse_seek_range(_tablets[_tablet_idx]->tablet_schema(), _range_start_op, _range_end_op,
                                                        _range_start_key, _range_end_key, &_tablet_seek_ranges,
                                                        &_mempool));
     }

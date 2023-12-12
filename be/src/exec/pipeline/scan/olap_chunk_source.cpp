@@ -314,6 +314,18 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
         for (const auto& column_desc : _scan_node->thrift_olap_scan_node().columns_desc) {
             _tablet_schema->append_column(TabletColumn(column_desc));
         }
+
+        std::vector<ColumnId> sort_key_idxes;
+        for (std::string sort_key_name : _scan_node->thrift_olap_scan_node().sort_key_column_names) {
+            for (size_t idx = 0; idx < _tablet_schema->columns().size(); ++idx) {
+                auto tcolumn = _tablet_schema->column(idx);
+                if (tcolumn.name() == sort_key_name) {
+                    sort_key_idxes.emplace_back(idx);
+                    break;
+                }
+            }
+        }
+        _tablet_schema->set_sort_key_idxes(sort_key_idxes);
     }
 
     RETURN_IF_ERROR(_init_global_dicts(&_params));
