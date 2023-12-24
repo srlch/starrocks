@@ -170,7 +170,7 @@ Status DictionaryCacheWriter::_send_request(ChunkPB* pchunk, POlapTableSchemaPar
 
         auto& closure = closures[i];
         closure->ref();
-        closure->cntl.set_timeout_ms(60000);
+        closure->cntl.set_timeout_ms(120000);
         closure->cntl.ignore_eovercrowded();
 
         auto res = HttpBrpcStubCache::getInstance()->get_http_stub(nodes[i]);
