@@ -65,7 +65,7 @@ StatusOr<ColumnPtr> DictionaryGetExpr::evaluate_checked(ExprContext* context, Ch
     auto fields = down_cast<StructColumn*>(struct_column.get())->fields_column();
     for (size_t i = 0; i < value_chunk->columns().size(); ++i) {
         auto column = value_chunk->columns()[i];
-        down_cast<NullableColumn*>(fields[i].get())->data_column().swap(column);
+        fields[i]->append(*column, 0, column->size());
     }
 
     return struct_column;

@@ -706,7 +706,7 @@ Status decode_internal(const Schema& schema, const T& bkeys, size_t offset, size
                 decode_integral(&s, &v._julian);
                 tc.append(v);
             } break;
-            case TYPE_DATETIME_V1: {
+            case TYPE_DATETIME: {
                 auto& tc = down_cast<TimestampColumn&>(column);
                 TimestampValue v;
                 decode_integral(&s, &v._timestamp);

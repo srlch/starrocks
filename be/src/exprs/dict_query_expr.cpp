@@ -31,6 +31,7 @@ namespace starrocks {
 DictQueryExpr::DictQueryExpr(const TExprNode& node) : Expr(node), _dict_query_expr(node.dict_query_expr) {}
 
 StatusOr<ColumnPtr> DictQueryExpr::evaluate_checked(ExprContext* context, Chunk* ptr) {
+    OlapStopWatch w1;
     Columns columns(children().size());
     size_t size = ptr != nullptr ? ptr->num_rows() : 1;
     for (int i = 0; i < _children.size(); ++i) {
@@ -63,12 +64,16 @@ StatusOr<ColumnPtr> DictQueryExpr::evaluate_checked(ExprContext* context, Chunk*
     ChunkPtr value_chunk = ChunkHelper::new_chunk(_value_schema, key_chunk->num_rows());
     value_chunk->set_slot_id_to_index(_value_slot_id, 0);
 
+    OlapStopWatch w2;
     Status status = _table_reader->multi_get(*key_chunk, {_dict_query_expr.value_field}, found, *value_chunk);
     if (!status.ok()) {
         // todo retry
         LOG(WARNING) << "fail to execute multi get: " << status.detailed_message();
         return status;
     }
+    auto w2_time = w2.get_elapse_second();
+    LOG(INFO) << "finish multi_get: " << w2_time;
+
     res = value_chunk->get_column_by_index(0)->clone_empty();
     if (!res->is_nullable()) {
         auto null_column = UInt8Column::create(0, 0);
@@ -87,6 +92,9 @@ StatusOr<ColumnPtr> DictQueryExpr::evaluate_checked(ExprContext* context, Chunk*
             res->append_nulls(1);
         }
     }
+
+    auto w1_time = w1.get_elapse_second();
+    LOG(INFO) << "finish dict_query: " << w1_time;
 
     return res;
 }

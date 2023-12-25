@@ -74,7 +74,7 @@ Status DictionaryCacheManager::refresh(const PProcessDictionaryCacheRequest* req
     // dictionary_schema: col2, col3, col1, col4 (without nullable attribute)
     SchemaPtr dictionary_schema = ChunkHelper::convert_schema((schema->indexes()[0])->column_param->columns, col_names);
     DCHECK(dictionary_schema != nullptr);
-    std::vector<int> keys(dictionary_schema->fields().size(), 0);
+    std::vector<int> keys(dictionary_schema->fields().size(), 1);
     // remove the nullable attribute if necessary
     dictionary_schema = ChunkHelper::get_non_nullable_schema(dictionary_schema, &keys);
 
@@ -136,14 +136,15 @@ Status DictionaryCacheManager::refresh(const PProcessDictionaryCacheRequest* req
     // 4. refresh
     return _refresh_encoded_chunk(dict_id, txn_id, encoded_key_column.get(), encoded_value_column.get(),
                                   dictionary_schema, DictionaryCacheUtil::get_encoded_type(*key_schema.get()),
-                                  DictionaryCacheUtil::get_encoded_type(*value_schema.get()), memory_limit);
+                                  DictionaryCacheUtil::get_encoded_type(*value_schema.get()), memory_limit,
+                                  DictionaryCacheUtil::get_encoded_fixed_size(*key_schema));
 }
 
 Status DictionaryCacheManager::_refresh_encoded_chunk(DictionaryId dict_id, DictionaryCacheTxnId txn_id,
                                                       const Column* encoded_key_column,
                                                       const Column* encoded_value_column, const SchemaPtr& schema,
                                                       LogicalType key_encoded_type, LogicalType value_encoded_type,
-                                                      long memory_limit) {
+                                                      long memory_limit, size_t fix_size) {
     DCHECK(key_encoded_type != TYPE_NONE);
     DCHECK(value_encoded_type != TYPE_NONE);
 
@@ -163,8 +164,14 @@ Status DictionaryCacheManager::_refresh_encoded_chunk(DictionaryId dict_id, Dict
         if (LIKELY(_mutable_dict_caches.find(dict_id) != _mutable_dict_caches.end() &&
                    _mutable_dict_caches[dict_id]->find(txn_id) != _mutable_dict_caches[dict_id]->end())) {
             if ((*_mutable_dict_caches[dict_id])[txn_id] == nullptr) {
-                auto p = DictionaryCacheUtil::create_dictionary_cache(
-                        std::pair<LogicalType, LogicalType>(key_encoded_type, value_encoded_type));
+                DictionaryCachePtr p = nullptr;
+                if (fix_size <= DICTIONARY_PREFETCHABLE_MAX_SIZE) {
+                    p = DictionaryCacheUtil::create_dictionary_cache<true>(
+                                            std::pair<LogicalType, LogicalType>(key_encoded_type, value_encoded_type));
+                } else {
+                    p = DictionaryCacheUtil::create_dictionary_cache<false>(
+                                            std::pair<LogicalType, LogicalType>(key_encoded_type, value_encoded_type));
+                }
                 if (p == nullptr) {
                     return Status::InternalError("Invalid dictionary type");
                 }
