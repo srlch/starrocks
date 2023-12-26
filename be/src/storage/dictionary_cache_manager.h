@@ -33,8 +33,8 @@
 
 namespace starrocks {
 
-#define DICTIONARY_PREFETCHABLE_MAX_SIZE = 64;
-#define DICTIONARY_PREFETCHN = 8;
+constexpr uint8_t PREFETCHABLE_MAX_SIZE = 64;
+constexpr uint8_t PREFETCHN = 8;
 
 enum DictionaryCacheEncoderType {
     PK_ENCODE = 0,
@@ -47,7 +47,7 @@ struct DictionaryCacheTypeTraits {
 
 template <>
 struct DictionaryCacheTypeTraits<TYPE_VARCHAR, true> {
-    using CppType = std::array<uint8_t, 64>;
+    using CppType = std::array<uint8_t, PREFETCHABLE_MAX_SIZE>;
 };
 
 template <>
@@ -122,7 +122,7 @@ public:
         bool not_found = false;
         size_t size = src->size();
         if constexpr (std::is_same_v<KeyCppType, std::array>) {
-            const auto* keys = reinterpret_cast<const Slice*>(pks.raw_data());
+            const auto* raw_data = reinterpret_cast<const Slice*>(pks.raw_data());
             uint32_t n = idx_end - idx_begin;
             if (n >= PREFETCHN * 2) {
                 FixSlice<S> prefetch_keys[PREFETCHN];
@@ -161,7 +161,7 @@ public:
             KeyCppType key;
             key = std::move(k.get<Slice>().to_string());
             auto iter = _dictionary.find(key);
-            if (iter == _dictionary.end()) {
+            if (iter != _dictionary.end()) {
                 not_found = true;
                 break;
             }
@@ -169,7 +169,7 @@ public:
         } else {
             auto* raw_data = reinterpret_cast<const KeyCppType*>(src.raw_data());
             for (auto i = 0; i < size; i++) {
-                uint32_t prefetch_i = i + DICTIONARY_PREFETCHN;
+                uint32_t prefetch_i = i + PREFETCHN;
                 if (LIKELY(prefetch_i < size)) _dictionary.prefetch(raw_data[prefetch_i]);
                 auto iter = _dictionary.find(raw_data[i]);
                 if (iter != _dictionary.end()) {
