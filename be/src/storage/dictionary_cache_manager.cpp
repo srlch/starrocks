@@ -189,6 +189,10 @@ Status DictionaryCacheManager::_refresh_encoded_chunk(DictionaryId dict_id, Dict
     DCHECK(encoded_value_column != nullptr);
     DCHECK(encoded_key_column->size() == encoded_value_column->size());
 
+    mutable_cache->lock().lock();
+    DeferOp op([&]() {
+        mutable_cache->lock().unlock();
+    });
     for (size_t i = 0; i < encoded_key_column->size(); ++i) {
         auto key = encoded_key_column->get(i);
         auto value = encoded_value_column->get(i);

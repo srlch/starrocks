@@ -34,24 +34,13 @@
 
 namespace starrocks {
 
-struct FixBuffer {
-    static constexpr uint8_t PREFETCHABLE_MAX_SIZE = 64;
-    static constexpr uint8_t PREFETCHN = 8;
-
-    uint8_t v[PREFETCHABLE_MAX_SIZE];
-    FixBuffer() = default;
-    explicit FixBuffer(const Slice& s) { assign(s); }
-    void clear() { memset(v, 0, sizeof(FixBuffer)); }
-    void assign(const Slice& s) {
-        clear();
-        CHECK(s.size <= PREFETCHABLE_MAX_SIZE) << "slice size > FixBuffer size";
-        memcpy(v, s.data, s.size);
-    }
-    inline bool operator==(const FixBuffer& rhs) const { return memcmp(v, rhs.v, PREFETCHABLE_MAX_SIZE) == 0; }
-};
-
 enum DictionaryCacheEncoderType {
     PK_ENCODE = 0,
+};
+
+struct FixBuffer {
+    static constexpr uint8_t PREFETCHN = 8;
+    static constexpr uint8_t PREFETCHABLE_MAX_SIZE = 64;
 };
 
 template <LogicalType logical_type>
@@ -85,10 +74,6 @@ struct DictionaryCacheHashTraits<TYPE_VARCHAR> {
     inline size_t operator()(const std::string& v) const { return XXH3_64bits(v.data(), v.length()); }
 };
 
-struct FixBufferHash {
-    inline size_t operator()(const FixBuffer& v) const { return XXH3_64bits(v.v, FixBuffer::PREFETCHABLE_MAX_SIZE); }
-};
-
 class DictionaryCache {
 public:
     DictionaryCache(DictionaryCacheEncoderType type) : _type(type) {}
@@ -99,6 +84,8 @@ public:
     virtual inline Status lookup(Column* src, Column* dest) = 0;
 
     virtual inline size_t memory_usage() = 0;
+
+    virtual std::mutex& lock() = 0;
 
 protected:
     DictionaryCacheEncoderType _type;
@@ -114,25 +101,22 @@ public:
     using ValueCppType = typename DictionaryCacheTypeTraits<ValueLogicalType>::CppType;
 
     virtual inline Status insert(const Datum& k, const Datum& v) override {
-        KeyCppType key;
-        ValueCppType value;
-        if constexpr (std::is_same_v<KeyCppType, std::string>) {
-            key = std::move(k.get<Slice>().to_string());
-        } else {
-            key = k.get<KeyCppType>();
+        switch (_type) {
+        case DictionaryCacheEncoderType::PK_ENCODE: {
+            KeyCppType key;
+            ValueCppType value;
+            _get<KeyCppType>(k, key);
+            _get<ValueCppType>(v, value);
+            auto r = _dictionary.insert({key, value});
+            if (!r.second) {
+                return Status::InternalError("duplicate key found when refreshing dictionary");
+            }
+            _total_memory_useage.fetch_add(_get_element_memory_usage<KeyCppType, ValueCppType>(key, value));
+            return Status::OK();
         }
-
-        if constexpr (std::is_same_v<ValueCppType, std::string>) {
-            value = std::move(v.get<Slice>().to_string());
-        } else {
-            value = v.get<ValueCppType>();
+        default:
+            return Status::InternalError("Unknow encoder for dictionary cache");
         }
-
-        auto r = _dictionary.insert({key, value});
-        if (!r.second) {
-            return Status::InternalError("duplicate key found when refreshing dictionary");
-        }
-        _total_memory_useage.fetch_add(_get_element_memory_usage<KeyCppType, ValueCppType>(key, value));
         return Status::OK();
     }
 
@@ -140,8 +124,6 @@ public:
         size_t size = src->size();
         if constexpr (std::is_same_v<KeyCppType, std::string>) {
             const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
-            
-
 
             if (LIKELY(size >= FixBuffer::PREFETCHN * 4)) {
                 size_t beg_index = 0;
@@ -151,12 +133,14 @@ public:
                     beg_index = i * 4 * FixBuffer::PREFETCHN;
                     bool prefetchable = true;
 
+                    /*
                     for (size_t j = beg_index; j < beg_index + 4 * FixBuffer::PREFETCHN; j++) {
                         if (raw_data[j].size > FixBuffer::PREFETCHABLE_MAX_SIZE) {
                             prefetchable = false;
                             break;
                         }
                     }
+                    */
 
                     if (prefetchable) {
                         std::vector<std::string> prefetch_keys(FixBuffer::PREFETCHN);
@@ -228,8 +212,9 @@ public:
 
     virtual inline size_t memory_usage() override { return _total_memory_useage.load(); }
 
+    virtual std::mutex& lock() override { return _lock; }
+
 private:
-    /*
     template <class CppType>
     inline void _get(const Datum& d, CppType& v) {
         switch (_type) {
@@ -246,7 +231,6 @@ private:
         }
         return;
     }
-    */
 
     inline std::shared_ptr<Datum> _get_datum(const ValueCppType& v) {
         switch (_type) {
@@ -278,9 +262,10 @@ private:
     phmap::parallel_flat_hash_map<KeyCppType, ValueCppType, DictionaryCacheHashTraits<KeyLogicalType>,
                                   phmap::priv::hash_default_eq<KeyCppType>,
                                   phmap::priv::Allocator<phmap::priv::Pair<const KeyCppType, ValueCppType>>, 4,
-                                  std::shared_mutex, true>
+                                  phmap::NullMutex, true>
             _dictionary;
     std::atomic<size_t> _total_memory_useage;
+    std::mutex _lock;
 };
 
 using DictionaryCachePtr = std::shared_ptr<DictionaryCache>;
