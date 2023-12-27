@@ -136,16 +136,14 @@ Status DictionaryCacheManager::refresh(const PProcessDictionaryCacheRequest* req
     // 4. refresh
     return _refresh_encoded_chunk(dict_id, txn_id, encoded_key_column.get(), encoded_value_column.get(),
                                   dictionary_schema, DictionaryCacheUtil::get_encoded_type(*key_schema.get()),
-                                  DictionaryCacheUtil::get_encoded_type(*value_schema.get()), memory_limit,
-                                  DictionaryCacheUtil::get_encoded_fixed_size(*key_schema),
-                                  DictionaryCacheUtil::get_encoded_fixed_size(*value_schema));
+                                  DictionaryCacheUtil::get_encoded_type(*value_schema.get()), memory_limit);
 }
 
 Status DictionaryCacheManager::_refresh_encoded_chunk(DictionaryId dict_id, DictionaryCacheTxnId txn_id,
                                                       const Column* encoded_key_column,
                                                       const Column* encoded_value_column, const SchemaPtr& schema,
                                                       LogicalType key_encoded_type, LogicalType value_encoded_type,
-                                                      long memory_limit, size_t key_fix_size, size_t value_fix_size) {
+                                                      long memory_limit) {
     DCHECK(key_encoded_type != TYPE_NONE);
     DCHECK(value_encoded_type != TYPE_NONE);
 
@@ -165,14 +163,8 @@ Status DictionaryCacheManager::_refresh_encoded_chunk(DictionaryId dict_id, Dict
         if (LIKELY(_mutable_dict_caches.find(dict_id) != _mutable_dict_caches.end() &&
                    _mutable_dict_caches[dict_id]->find(txn_id) != _mutable_dict_caches[dict_id]->end())) {
             if ((*_mutable_dict_caches[dict_id])[txn_id] == nullptr) {
-                DictionaryCachePtr p = nullptr;
-                if (key_fix_size <= FixBuffer::PREFETCHABLE_MAX_SIZE && value_fix_size <= FixBuffer::PREFETCHABLE_MAX_SIZE) {
-                    p = DictionaryCacheUtil::create_dictionary_cache<true>(
-                                            std::pair<LogicalType, LogicalType>(key_encoded_type, value_encoded_type));
-                } else {
-                    p = DictionaryCacheUtil::create_dictionary_cache<false>(
-                                            std::pair<LogicalType, LogicalType>(key_encoded_type, value_encoded_type));
-                }
+                DictionaryCachePtr p = DictionaryCacheUtil::create_dictionary_cache(
+                                       std::pair<LogicalType, LogicalType>(key_encoded_type, value_encoded_type));
                 if (p == nullptr) {
                     return Status::InternalError("Invalid dictionary type");
                 }

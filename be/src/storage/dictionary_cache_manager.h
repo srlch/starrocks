@@ -44,54 +44,45 @@ struct FixBuffer {
     void clear() { memset(v, 0, sizeof(FixBuffer)); }
     void assign(const Slice& s) {
         clear();
-        DCHECK(s.size <= PREFETCHABLE_MAX_SIZE) << "slice size > FixBuffer size";
+        CHECK(s.size <= PREFETCHABLE_MAX_SIZE) << "slice size > FixBuffer size";
         memcpy(v, s.data, s.size);
     }
-    bool operator==(const FixBuffer& rhs) const { return memcmp(v, rhs.v, PREFETCHABLE_MAX_SIZE) == 0; }
+    inline bool operator==(const FixBuffer& rhs) const { return memcmp(v, rhs.v, PREFETCHABLE_MAX_SIZE) == 0; }
+    inline size_t operator()(const FixBuffer& v) const { return XXH3_64bits(v.v, FixBuffer::PREFETCHABLE_MAX_SIZE); }
 };
 
 enum DictionaryCacheEncoderType {
     PK_ENCODE = 0,
 };
 
-template <LogicalType logical_type, bool Prefetchable>
+template <LogicalType logical_type>
 struct DictionaryCacheTypeTraits {
     using CppType = typename CppTypeTraits<logical_type>::CppType;
 };
 
 template <>
-struct DictionaryCacheTypeTraits<TYPE_VARCHAR, true> {
-    using CppType = FixBuffer;
-};
-
-template <>
-struct DictionaryCacheTypeTraits<TYPE_VARCHAR, false> {
+struct DictionaryCacheTypeTraits<TYPE_VARCHAR> {
     using CppType = std::string;
 };
 
-template <bool Prefetchable>
-struct DictionaryCacheTypeTraits<TYPE_DATE, Prefetchable> {
+template <>
+struct DictionaryCacheTypeTraits<TYPE_DATE> {
     using CppType = int32_t;
 };
 
-template <bool Prefetchable>
-struct DictionaryCacheTypeTraits<TYPE_DATETIME, Prefetchable> {
+template <>
+struct DictionaryCacheTypeTraits<TYPE_DATETIME> {
     using CppType = int64_t;
 };
 
-template <LogicalType logical_type, bool Prefetchable>
+template <LogicalType logical_type>
 struct DictionaryCacheHashTraits {
-    using CppType = typename DictionaryCacheTypeTraits<logical_type, Prefetchable>::CppType;
+    using CppType = typename DictionaryCacheTypeTraits<logical_type>::CppType;
     inline size_t operator()(const CppType& v) const { return StdHashWithSeed<CppType, PhmapSeed1>()(v); }
 };
 
 template <>
-struct DictionaryCacheHashTraits<TYPE_VARCHAR, true> {
-    inline size_t operator()(const FixBuffer& v) const { return XXH3_64bits(v.v, FixBuffer::PREFETCHABLE_MAX_SIZE); }
-};
-
-template <>
-struct DictionaryCacheHashTraits<TYPE_VARCHAR, false> {
+struct DictionaryCacheHashTraits<TYPE_VARCHAR> {
     inline size_t operator()(const std::string& v) const { return XXH3_64bits(v.data(), v.length()); }
 };
 
@@ -110,21 +101,19 @@ protected:
     DictionaryCacheEncoderType _type;
 };
 
-template <LogicalType KeyLogicalType, LogicalType ValueLogicalType, bool Prefetchable>
+template <LogicalType KeyLogicalType, LogicalType ValueLogicalType>
 class DictionaryCacheImpl final : public DictionaryCache {
 public:
     DictionaryCacheImpl(DictionaryCacheEncoderType type) : DictionaryCache(type), _total_memory_useage(0) {}
     virtual ~DictionaryCacheImpl() override = default;
 
-    using KeyCppType = typename DictionaryCacheTypeTraits<KeyLogicalType, Prefetchable>::CppType;
-    using ValueCppType = typename DictionaryCacheTypeTraits<ValueLogicalType, false>::CppType;
+    using KeyCppType = typename DictionaryCacheTypeTraits<KeyLogicalType>::CppType;
+    using ValueCppType = typename DictionaryCacheTypeTraits<ValueLogicalType>::CppType;
 
     virtual inline Status insert(const Datum& k, const Datum& v) override {
         KeyCppType key;
         ValueCppType value;
-        if constexpr (std::is_same_v<KeyCppType, FixBuffer>) {
-            key.assign(k.get<Slice>());
-        } else if constexpr (std::is_same_v<KeyCppType, std::string>) {
+        if constexpr (std::is_same_v<KeyCppType, std::string>) {
             key = std::move(k.get<Slice>().to_string());
         } else {
             key = k.get<KeyCppType>();
@@ -147,6 +136,41 @@ public:
     virtual inline Status lookup(Column* src, Column* dest) override {
         bool not_found = false;
         size_t size = src->size();
+        if constexpr (std::is_same_v<KeyCppType, std::string>) {
+            const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
+            if (size >= FixBuffer::PREFETCHN * 2) {
+                size_t beg_index = 0;
+                if (LIKELY(beg_index + 4 * FixBuffer::PREFETCHN) < size) {
+                    bool prefetchable = true;
+                    for (size_t i = 0; i < 4 * FixBuffer::PREFETCHN; i++) {
+                        
+                    }
+                } else {
+                    for (auto i = beg_index; i < size; i++) {
+                        std::string key = std::move(raw_data[i].to_string());
+                        auto iter = _dictionary.find(key);
+                        if (iter == _dictionary.end()) {
+                            not_found = true;
+                            break;
+                        }
+                        dest->append_datum(*_get_datum(iter->second));
+                    }
+                }
+            } else {
+                for (auto i = 0; i < size; i++) {
+                    std::string key = std::move(raw_data[i].to_string());
+                    auto iter = _dictionary.find(key);
+                    if (iter == _dictionary.end()) {
+                        not_found = true;
+                        break;
+                    }
+                    dest->append_datum(*_get_datum(iter->second));
+                }
+            }
+        }
+
+
+
         if constexpr (std::is_same_v<KeyCppType, FixBuffer>) {
             const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
             if (size >= FixBuffer::PREFETCHN * 2) {
@@ -195,7 +219,16 @@ public:
                 }
                 dest->append_datum(*_get_datum(iter->second));
             }
-        } else {
+        }
+        
+        
+        
+        
+        
+        
+        
+        
+        else {
             const auto* raw_data = reinterpret_cast<const KeyCppType*>(src->raw_data());
             for (auto i = 0; i < size; i++) {
                 uint32_t prefetch_i = i + FixBuffer::PREFETCHN;
@@ -264,10 +297,10 @@ private:
         return 0;
     }
 
-    phmap::parallel_flat_hash_map<KeyCppType, ValueCppType, DictionaryCacheHashTraits<KeyLogicalType, Prefetchable>,
+    phmap::parallel_flat_hash_map<KeyCppType, ValueCppType, DictionaryCacheHashTraits<KeyLogicalType>,
                                   phmap::priv::hash_default_eq<KeyCppType>,
                                   phmap::priv::Allocator<phmap::priv::Pair<const KeyCppType, ValueCppType>>, 4,
-                                  phmap::NullMutex, true>
+                                  std::shared_mutex, true>
             _dictionary;
     std::atomic<size_t> _total_memory_useage;
 };
@@ -328,7 +361,7 @@ public:
         return TYPE_NONE;
     }
 
-    template <bool Prefetchable>
+    template
     static DictionaryCachePtr create_dictionary_cache(
             const std::pair<LogicalType, LogicalType>& type,
             const DictionaryCacheEncoderType& encoder_type = PK_ENCODE) {
@@ -336,7 +369,7 @@ public:
         case PK_ENCODE: {
 #define CASE_TYPE(key_type, value_type) \
     if (type == std::make_pair(key_type, value_type))                        \
-        return std::make_shared<DictionaryCacheImpl<key_type, value_type, Prefetchable>>(encoder_type)
+        return std::make_shared<DictionaryCacheImpl<key_type, value_type>>(encoder_type)
 
             CASE_TYPE(TYPE_BOOLEAN, TYPE_BOOLEAN);
             CASE_TYPE(TYPE_BOOLEAN, TYPE_TINYINT);
@@ -502,8 +535,7 @@ public:
 private:
     Status _refresh_encoded_chunk(DictionaryId dict_id, DictionaryCacheTxnId txn_id, const Column* encoded_key_column,
                                   const Column* encoded_value_column, const SchemaPtr& schema,
-                                  LogicalType key_encoded_type, LogicalType value_encoded_type, long memory_limit,
-                                  size_t key_fix_size, size_t value_fix_size);
+                                  LogicalType key_encoded_type, LogicalType value_encoded_type, long memory_limit);
 
     // dictionary id -> DictionaryCache
     std::unordered_map<DictionaryId, DictionaryCachePtr> _dict_cache;
