@@ -48,7 +48,6 @@ struct FixBuffer {
         memcpy(v, s.data, s.size);
     }
     inline bool operator==(const FixBuffer& rhs) const { return memcmp(v, rhs.v, PREFETCHABLE_MAX_SIZE) == 0; }
-    inline size_t operator()(const FixBuffer& v) const { return XXH3_64bits(v.v, FixBuffer::PREFETCHABLE_MAX_SIZE); }
 };
 
 enum DictionaryCacheEncoderType {
@@ -84,6 +83,10 @@ struct DictionaryCacheHashTraits {
 template <>
 struct DictionaryCacheHashTraits<TYPE_VARCHAR> {
     inline size_t operator()(const std::string& v) const { return XXH3_64bits(v.data(), v.length()); }
+};
+
+struct FixBufferHash {
+    inline size_t operator()(const FixBuffer& v) const { return XXH3_64bits(v.v, FixBuffer::PREFETCHABLE_MAX_SIZE); }
 };
 
 class DictionaryCache {
@@ -134,117 +137,92 @@ public:
     }
 
     virtual inline Status lookup(Column* src, Column* dest) override {
-        bool not_found = false;
         size_t size = src->size();
         if constexpr (std::is_same_v<KeyCppType, std::string>) {
             const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
-            if (size >= FixBuffer::PREFETCHN * 2) {
+            
+
+
+            if (LIKELY(size >= FixBuffer::PREFETCHN * 4)) {
                 size_t beg_index = 0;
-                if (LIKELY(beg_index + 4 * FixBuffer::PREFETCHN) < size) {
+                size_t loop = size / (4 * FixBuffer::PREFETCHN);
+                size_t remain = size % (4 * FixBuffer::PREFETCHN);
+                for (size_t i = 0; i < loop; i++) {
+                    beg_index = i * 4 * FixBuffer::PREFETCHN;
                     bool prefetchable = true;
-                    for (size_t i = 0; i < 4 * FixBuffer::PREFETCHN; i++) {
-                        
-                    }
-                } else {
-                    for (auto i = beg_index; i < size; i++) {
-                        std::string key = std::move(raw_data[i].to_string());
-                        auto iter = _dictionary.find(key);
-                        if (iter == _dictionary.end()) {
-                            not_found = true;
+
+                    for (size_t j = beg_index; j < beg_index + 4 * FixBuffer::PREFETCHN; j++) {
+                        if (raw_data[j].size > FixBuffer::PREFETCHABLE_MAX_SIZE) {
+                            prefetchable = false;
                             break;
                         }
-                        dest->append_datum(*_get_datum(iter->second));
+                    }
+
+                    if (prefetchable) {
+                        std::vector<std::string> prefetch_keys(FixBuffer::PREFETCHN);
+                        size_t prefetch_hashes[FixBuffer::PREFETCHN];
+                        for (uint32_t j = 0; j < FixBuffer::PREFETCHN; j++) {
+                            prefetch_keys[j].assign(raw_data[beg_index + j].data, raw_data[beg_index + j].size);
+                            prefetch_hashes[j] = DictionaryCacheHashTraits<TYPE_VARCHAR>()(prefetch_keys[j]);
+                            _dictionary.prefetch_hash(prefetch_hashes[j]);
+                        }
+                        for (auto j = beg_index; j < beg_index + 4 * FixBuffer::PREFETCHN; j++) {
+                            uint32_t pslot = (j - beg_index) % FixBuffer::PREFETCHN;
+                            auto iter = _dictionary.find(prefetch_keys[pslot], prefetch_hashes[pslot]);
+                            if (iter == _dictionary.end()) {
+                                return Status::NotFound("key not found in dictionary cache");
+                            }
+                            dest->append_datum(*_get_datum(iter->second));
+                            uint32_t prefetch_j = j + FixBuffer::PREFETCHN;
+                            if (LIKELY(prefetch_j < beg_index + 4 * FixBuffer::PREFETCHN)) {
+                                prefetch_keys[pslot].assign(raw_data[prefetch_j]);
+                                prefetch_hashes[pslot] = DictionaryCacheHashTraits<TYPE_VARCHAR>()(prefetch_keys[pslot]);
+                                _dictionary.prefetch_hash(prefetch_hashes[pslot]);
+                            }
+                        }
+                    } else {
+                        for (size_t j = beg_index; j < beg_index + 4 * FixBuffer::PREFETCHN; j++) {
+                            std::string key = std::move(raw_data[j].to_string());
+                            auto iter = _dictionary.find(key);
+                            if (iter == _dictionary.end()) {
+                                return Status::NotFound("key not found in dictionary cache");
+                            }
+                            dest->append_datum(*_get_datum(iter->second));
+                        }
                     }
                 }
-            } else {
-                for (auto i = 0; i < size; i++) {
+                beg_index = loop * FixBuffer::PREFETCHN * 4;
+                for (size_t i = beg_index; i < beg_index + remain; i++) {
                     std::string key = std::move(raw_data[i].to_string());
                     auto iter = _dictionary.find(key);
                     if (iter == _dictionary.end()) {
-                        not_found = true;
-                        break;
+                        return Status::NotFound("key not found in dictionary cache");
                     }
                     dest->append_datum(*_get_datum(iter->second));
-                }
-            }
-        }
-
-
-
-        if constexpr (std::is_same_v<KeyCppType, FixBuffer>) {
-            const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
-            if (size >= FixBuffer::PREFETCHN * 2) {
-                FixBuffer prefetch_keys[FixBuffer::PREFETCHN];
-                size_t prefetch_hashes[FixBuffer::PREFETCHN];
-                for (uint32_t i = 0; i < FixBuffer::PREFETCHN; i++) {
-                    prefetch_keys[i].assign(raw_data[i]);
-                    prefetch_hashes[i] = DictionaryCacheHashTraits<TYPE_VARCHAR, true>()(prefetch_keys[i]);
-                    _dictionary.prefetch_hash(prefetch_hashes[i]);
-                }
-                for (auto i = 0; i < size; i++) {
-                    uint32_t pslot = i % FixBuffer::PREFETCHN;
-                    auto iter = _dictionary.find(prefetch_keys[pslot], prefetch_hashes[pslot]);
-                    if (iter == _dictionary.end()) {
-                        not_found = true;
-                        break;
-                    }
-                    dest->append_datum(*_get_datum(iter->second));
-                    uint32_t prefetch_i = i + FixBuffer::PREFETCHN;
-                    if (LIKELY(prefetch_i < size)) {
-                        prefetch_keys[pslot].assign(raw_data[prefetch_i]);
-                        prefetch_hashes[pslot] = DictionaryCacheHashTraits<TYPE_VARCHAR, true>()(prefetch_keys[pslot]);
-                        _dictionary.prefetch_hash(prefetch_hashes[pslot]);
-                    }
                 }
             } else {
-                for (auto i = 0; i < size; i++) {
-                    FixBuffer key;
-                    key.assign(raw_data[i]);
+                for (size_t i = 0; i < size; i++) {
+                    std::string key = std::move(raw_data[i].to_string());
                     auto iter = _dictionary.find(key);
                     if (iter == _dictionary.end()) {
-                        not_found = true;
-                        break;
+                        return Status::NotFound("key not found in dictionary cache");
                     }
                     dest->append_datum(*_get_datum(iter->second));
                 }
             }
-        } else if constexpr (std::is_same_v<KeyCppType, std::string>) {
-            const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
-            for (auto i = 0; i < size; i++) {
-                std::string key = std::move(raw_data[i].to_string());
-                auto iter = _dictionary.find(key);
-                if (iter == _dictionary.end()) {
-                    not_found = true;
-                    break;
-                }
-                dest->append_datum(*_get_datum(iter->second));
-            }
-        }
-        
-        
-        
-        
-        
-        
-        
-        
-        else {
+        } else {
             const auto* raw_data = reinterpret_cast<const KeyCppType*>(src->raw_data());
             for (auto i = 0; i < size; i++) {
                 uint32_t prefetch_i = i + FixBuffer::PREFETCHN;
                 if (LIKELY(prefetch_i < size)) _dictionary.prefetch(raw_data[prefetch_i]);
                 auto iter = _dictionary.find(raw_data[i]);
                 if (iter == _dictionary.end()) {
-                    not_found = true;
-                    break;
+                    return Status::NotFound("key not found in dictionary cache");
                 }
                 dest->append_datum(*_get_datum(iter->second));
             }
         }
 
-        if (not_found) {
-            return Status::NotFound("key not found in dictionary cache");
-        }
         return Status::OK();
     }
 
@@ -361,7 +339,6 @@ public:
         return TYPE_NONE;
     }
 
-    template
     static DictionaryCachePtr create_dictionary_cache(
             const std::pair<LogicalType, LogicalType>& type,
             const DictionaryCacheEncoderType& encoder_type = PK_ENCODE) {
