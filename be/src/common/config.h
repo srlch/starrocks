@@ -621,7 +621,7 @@ CONF_Bool(ignore_load_tablet_failure, "false");
 CONF_Bool(ignore_rowset_stale_unconsistent_delete, "false");
 
 // The chunk size for vector query engine
-CONF_Int32(vector_chunk_size, "4096");
+CONF_Int32(vector_chunk_size, "524288");
 
 // Valid range: [0-1000].
 // `0` will disable late materialization.

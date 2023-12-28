@@ -40,7 +40,7 @@ MACHINE_TYPE=$(uname -m)
 export STARROCKS_HOME=${ROOT}
 
 if [ -z $BUILD_TYPE ]; then
-    export BUILD_TYPE=Debug
+    export BUILD_TYPE=Release
 fi
 
 cd $STARROCKS_HOME

@@ -21,6 +21,7 @@
 #include "column/chunk.h"
 #include "column/column.h"
 #include "column/datum.h"
+#include "common/compiler_util.h"
 #include "common/status.h"
 #include "exec/dictionary_cache_writer.h"
 #include "fmt/format.h"
@@ -36,11 +37,6 @@ namespace starrocks {
 
 enum DictionaryCacheEncoderType {
     PK_ENCODE = 0,
-};
-
-struct FixBuffer {
-    static constexpr uint8_t PREFETCHN = 8;
-    static constexpr uint8_t PREFETCHABLE_MAX_SIZE = 64;
 };
 
 template <LogicalType logical_type>
@@ -91,15 +87,20 @@ protected:
     DictionaryCacheEncoderType _type;
 };
 
+class DictionaryCacheUtil;
 template <LogicalType KeyLogicalType, LogicalType ValueLogicalType>
 class DictionaryCacheImpl final : public DictionaryCache {
 public:
-    DictionaryCacheImpl(DictionaryCacheEncoderType type) : DictionaryCache(type), _total_memory_useage(0) {}
+    static constexpr uint8_t PREFETCHN = 8;
+    static constexpr uint8_t PREFETCHABLE_MAX_SIZE = 40;
+
+    DictionaryCacheImpl(DictionaryCacheEncoderType type) : DictionaryCache(type), _total_memory_useage(0),
+                                                           _prefetchable(true) {}
     virtual ~DictionaryCacheImpl() override = default;
 
     using KeyCppType = typename DictionaryCacheTypeTraits<KeyLogicalType>::CppType;
     using ValueCppType = typename DictionaryCacheTypeTraits<ValueLogicalType>::CppType;
-
+ 
     virtual inline Status insert(const Datum& k, const Datum& v) override {
         switch (_type) {
         case DictionaryCacheEncoderType::PK_ENCODE: {
@@ -121,90 +122,78 @@ public:
     }
 
     virtual inline Status lookup(Column* src, Column* dest) override {
-        size_t size = src->size();
-        if constexpr (std::is_same_v<KeyCppType, std::string>) {
-            const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
+        switch (_type) {
+        case DictionaryCacheEncoderType::PK_ENCODE: {
+            size_t size = src->size();
+            if constexpr (std::is_same_v<KeyCppType, std::string>) {
+                const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
 
-            if (LIKELY(size >= FixBuffer::PREFETCHN * 4)) {
-                size_t beg_index = 0;
-                size_t loop = size / (4 * FixBuffer::PREFETCHN);
-                size_t remain = size % (4 * FixBuffer::PREFETCHN);
-                for (size_t i = 0; i < loop; i++) {
-                    beg_index = i * 4 * FixBuffer::PREFETCHN;
-                    bool prefetchable = true;
+                if (LIKELY(size >= PREFETCHN * 2) && _prefetchable) {
+                    size_t beg_index = 0;
+                    size_t loop = size / PREFETCHN;
 
-                    /*
-                    for (size_t j = beg_index; j < beg_index + 4 * FixBuffer::PREFETCHN; j++) {
-                        if (raw_data[j].size > FixBuffer::PREFETCHABLE_MAX_SIZE) {
-                            prefetchable = false;
-                            break;
-                        }
-                    }
-                    */
+                    std::vector<std::string> prefetch_keys(PREFETCHN);
+                    size_t prefetch_hashes[PREFETCHN];
 
-                    if (prefetchable) {
-                        std::vector<std::string> prefetch_keys(FixBuffer::PREFETCHN);
-                        size_t prefetch_hashes[FixBuffer::PREFETCHN];
-                        for (uint32_t j = 0; j < FixBuffer::PREFETCHN; j++) {
+                    for (size_t i = 0; i < loop; i++) {
+                        beg_index = i * PREFETCHN;
+
+                        for (size_t j = 0; j < PREFETCHN; j++) {
                             prefetch_keys[j].assign(raw_data[beg_index + j].data, raw_data[beg_index + j].size);
+                        }
+
+                        for (size_t j = 0; j < PREFETCHN; j++) {
+                            PREFETCH(&prefetch_keys[j]);
+                            PREFETCH(prefetch_keys[j].data());
+
                             prefetch_hashes[j] = DictionaryCacheHashTraits<TYPE_VARCHAR>()(prefetch_keys[j]);
                             _dictionary.prefetch_hash(prefetch_hashes[j]);
                         }
-                        for (auto j = beg_index; j < beg_index + 4 * FixBuffer::PREFETCHN; j++) {
-                            uint32_t pslot = (j - beg_index) % FixBuffer::PREFETCHN;
-                            auto iter = _dictionary.find(prefetch_keys[pslot], prefetch_hashes[pslot]);
-                            if (iter == _dictionary.end()) {
-                                return Status::NotFound("key not found in dictionary cache");
-                            }
-                            dest->append_datum(*_get_datum(iter->second));
-                            uint32_t prefetch_j = j + FixBuffer::PREFETCHN;
-                            if (LIKELY(prefetch_j < beg_index + 4 * FixBuffer::PREFETCHN)) {
-                                prefetch_keys[pslot].assign(raw_data[prefetch_j]);
-                                prefetch_hashes[pslot] = DictionaryCacheHashTraits<TYPE_VARCHAR>()(prefetch_keys[pslot]);
-                                _dictionary.prefetch_hash(prefetch_hashes[pslot]);
-                            }
-                        }
-                    } else {
-                        for (size_t j = beg_index; j < beg_index + 4 * FixBuffer::PREFETCHN; j++) {
-                            std::string key = std::move(raw_data[j].to_string());
-                            auto iter = _dictionary.find(key);
+
+                        for (size_t j = 0; j < PREFETCHN; j++) {
+                            auto iter = _dictionary.find(prefetch_keys[j], prefetch_hashes[j]);
                             if (iter == _dictionary.end()) {
                                 return Status::NotFound("key not found in dictionary cache");
                             }
                             dest->append_datum(*_get_datum(iter->second));
                         }
                     }
-                }
-                beg_index = loop * FixBuffer::PREFETCHN * 4;
-                for (size_t i = beg_index; i < beg_index + remain; i++) {
-                    std::string key = std::move(raw_data[i].to_string());
-                    auto iter = _dictionary.find(key);
-                    if (iter == _dictionary.end()) {
-                        return Status::NotFound("key not found in dictionary cache");
+
+                    beg_index = loop * PREFETCHN;
+                    for (size_t i = beg_index; i < size; i++) {
+                        std::string key = std::move(raw_data[i].to_string());
+                        auto iter = _dictionary.find(key);
+                        if (iter == _dictionary.end()) {
+                            return Status::NotFound("key not found in dictionary cache");
+                        }
+                        dest->append_datum(*_get_datum(iter->second));
                     }
-                    dest->append_datum(*_get_datum(iter->second));
+                } else {
+                    for (size_t i = 0; i < size; i++) {
+                        std::string key = std::move(raw_data[i].to_string());
+                        auto iter = _dictionary.find(key);
+                        if (iter == _dictionary.end()) {
+                            return Status::NotFound("key not found in dictionary cache");
+                        }
+                        dest->append_datum(*_get_datum(iter->second));
+                    }
                 }
             } else {
-                for (size_t i = 0; i < size; i++) {
-                    std::string key = std::move(raw_data[i].to_string());
-                    auto iter = _dictionary.find(key);
+                const auto* raw_data = reinterpret_cast<const KeyCppType*>(src->raw_data());
+                for (auto i = 0; i < size; i++) {
+                    uint32_t prefetch_i = i + PREFETCHN;
+                    if (LIKELY(prefetch_i < size)) _dictionary.prefetch(raw_data[prefetch_i]);
+                    auto iter = _dictionary.find(raw_data[i]);
                     if (iter == _dictionary.end()) {
                         return Status::NotFound("key not found in dictionary cache");
                     }
                     dest->append_datum(*_get_datum(iter->second));
                 }
             }
-        } else {
-            const auto* raw_data = reinterpret_cast<const KeyCppType*>(src->raw_data());
-            for (auto i = 0; i < size; i++) {
-                uint32_t prefetch_i = i + FixBuffer::PREFETCHN;
-                if (LIKELY(prefetch_i < size)) _dictionary.prefetch(raw_data[prefetch_i]);
-                auto iter = _dictionary.find(raw_data[i]);
-                if (iter == _dictionary.end()) {
-                    return Status::NotFound("key not found in dictionary cache");
-                }
-                dest->append_datum(*_get_datum(iter->second));
-            }
+            break;
+        }
+        default:
+            return Status::InternalError("Unknow encoder for dictionary cache");
         }
 
         return Status::OK();
@@ -251,7 +240,25 @@ private:
     inline size_t _get_element_memory_usage(const KeyCppType& k, const ValueCppType& v) {
         switch (_type) {
         case DictionaryCacheEncoderType::PK_ENCODE: {
-            return 1;
+            size_t size = 0;
+            if constexpr (std::is_same_v<KeyCppType, std::string>) {
+                size = k.length();
+                if (_prefetchable && k.length() > PREFETCHABLE_MAX_SIZE) {
+                    _prefetchable = false;
+                }
+            } else {
+                size = sizeof(KeyCppType);
+            }
+
+            if constexpr (std::is_same_v<ValueCppType, std::string>) {
+                size += v.length();
+                if (_prefetchable && v.length() > PREFETCHABLE_MAX_SIZE) {
+                    _prefetchable = false;
+                }
+            } else {
+                size += sizeof(ValueCppType);
+            }
+            return size;
         }
         default:
             break;
@@ -261,11 +268,12 @@ private:
 
     phmap::parallel_flat_hash_map<KeyCppType, ValueCppType, DictionaryCacheHashTraits<KeyLogicalType>,
                                   phmap::priv::hash_default_eq<KeyCppType>,
-                                  phmap::priv::Allocator<phmap::priv::Pair<const KeyCppType, ValueCppType>>, 4,
+                                  phmap::priv::Allocator<phmap::priv::Pair<const KeyCppType, ValueCppType>>, 8,
                                   phmap::NullMutex, true>
             _dictionary;
     std::atomic<size_t> _total_memory_useage;
     std::mutex _lock;
+    bool _prefetchable;
 };
 
 using DictionaryCachePtr = std::shared_ptr<DictionaryCache>;
@@ -287,7 +295,9 @@ public:
                 LOG(WARNING) << ss.str();
                 return nullptr;
             }
-            PrimaryKeyEncoder::encode(schema, *chunk, 0, chunk->num_rows(), encoded_columns.get());
+            if (chunk->num_rows() > 0) {
+                PrimaryKeyEncoder::encode(schema, *chunk, 0, chunk->num_rows(), encoded_columns.get());
+            }
             return encoded_columns;
         }
         default:
@@ -329,111 +339,107 @@ public:
             const DictionaryCacheEncoderType& encoder_type = PK_ENCODE) {
         switch (encoder_type) {
         case PK_ENCODE: {
-#define CASE_TYPE(key_type, value_type) \
+#define IF_TYPE(key_type, value_type) \
     if (type == std::make_pair(key_type, value_type))                        \
         return std::make_shared<DictionaryCacheImpl<key_type, value_type>>(encoder_type)
 
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_TINYINT);
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_INT);
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_BIGINT);
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_DATE);
-            CASE_TYPE(TYPE_BOOLEAN, TYPE_DATETIME);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_TINYINT);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_SMALLINT);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_INT);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_BIGINT);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_LARGEINT);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_VARCHAR);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_DATE);
+            IF_TYPE(TYPE_BOOLEAN, TYPE_DATETIME);
 
-            CASE_TYPE(TYPE_TINYINT, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_TINYINT, TYPE_TINYINT);
-            CASE_TYPE(TYPE_TINYINT, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_TINYINT, TYPE_INT);
-            CASE_TYPE(TYPE_TINYINT, TYPE_BIGINT);
-            CASE_TYPE(TYPE_TINYINT, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_TINYINT, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_TINYINT, TYPE_DATE);
-            CASE_TYPE(TYPE_TINYINT, TYPE_DATETIME);
+            IF_TYPE(TYPE_TINYINT, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_TINYINT, TYPE_TINYINT);
+            IF_TYPE(TYPE_TINYINT, TYPE_SMALLINT);
+            IF_TYPE(TYPE_TINYINT, TYPE_INT);
+            IF_TYPE(TYPE_TINYINT, TYPE_BIGINT);
+            IF_TYPE(TYPE_TINYINT, TYPE_LARGEINT);
+            IF_TYPE(TYPE_TINYINT, TYPE_VARCHAR);
+            IF_TYPE(TYPE_TINYINT, TYPE_DATE);
+            IF_TYPE(TYPE_TINYINT, TYPE_DATETIME);
 
-            CASE_TYPE(TYPE_SMALLINT, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_SMALLINT, TYPE_TINYINT);
-            CASE_TYPE(TYPE_SMALLINT, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_SMALLINT, TYPE_INT);
-            CASE_TYPE(TYPE_SMALLINT, TYPE_BIGINT);
-            CASE_TYPE(TYPE_SMALLINT, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_SMALLINT, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_SMALLINT, TYPE_DATE);
-            CASE_TYPE(TYPE_SMALLINT, TYPE_DATETIME);
+            IF_TYPE(TYPE_SMALLINT, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_SMALLINT, TYPE_TINYINT);
+            IF_TYPE(TYPE_SMALLINT, TYPE_SMALLINT);
+            IF_TYPE(TYPE_SMALLINT, TYPE_INT);
+            IF_TYPE(TYPE_SMALLINT, TYPE_BIGINT);
+            IF_TYPE(TYPE_SMALLINT, TYPE_LARGEINT);
+            IF_TYPE(TYPE_SMALLINT, TYPE_VARCHAR);
+            IF_TYPE(TYPE_SMALLINT, TYPE_DATE);
+            IF_TYPE(TYPE_SMALLINT, TYPE_DATETIME);
 
-            CASE_TYPE(TYPE_INT, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_INT, TYPE_TINYINT);
-            CASE_TYPE(TYPE_INT, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_INT, TYPE_INT);
-            CASE_TYPE(TYPE_INT, TYPE_BIGINT);
-            CASE_TYPE(TYPE_INT, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_INT, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_INT, TYPE_DATE);
-            CASE_TYPE(TYPE_INT, TYPE_DATETIME);
+            IF_TYPE(TYPE_INT, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_INT, TYPE_TINYINT);
+            IF_TYPE(TYPE_INT, TYPE_SMALLINT);
+            IF_TYPE(TYPE_INT, TYPE_INT);
+            IF_TYPE(TYPE_INT, TYPE_BIGINT);
+            IF_TYPE(TYPE_INT, TYPE_LARGEINT);
+            IF_TYPE(TYPE_INT, TYPE_VARCHAR);
+            IF_TYPE(TYPE_INT, TYPE_DATE);
+            IF_TYPE(TYPE_INT, TYPE_DATETIME);
 
-            CASE_TYPE(TYPE_BIGINT, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_BIGINT, TYPE_TINYINT);
-            CASE_TYPE(TYPE_BIGINT, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_BIGINT, TYPE_INT);
-            CASE_TYPE(TYPE_BIGINT, TYPE_BIGINT);
-            CASE_TYPE(TYPE_BIGINT, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_BIGINT, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_BIGINT, TYPE_DATE);
-            CASE_TYPE(TYPE_BIGINT, TYPE_DATETIME);
+            IF_TYPE(TYPE_BIGINT, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_BIGINT, TYPE_TINYINT);
+            IF_TYPE(TYPE_BIGINT, TYPE_SMALLINT);
+            IF_TYPE(TYPE_BIGINT, TYPE_INT);
+            IF_TYPE(TYPE_BIGINT, TYPE_BIGINT);
+            IF_TYPE(TYPE_BIGINT, TYPE_LARGEINT);
+            IF_TYPE(TYPE_BIGINT, TYPE_VARCHAR);
+            IF_TYPE(TYPE_BIGINT, TYPE_DATE);
+            IF_TYPE(TYPE_BIGINT, TYPE_DATETIME);
 
-            CASE_TYPE(TYPE_LARGEINT, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_LARGEINT, TYPE_TINYINT);
-            CASE_TYPE(TYPE_LARGEINT, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_LARGEINT, TYPE_INT);
-            CASE_TYPE(TYPE_LARGEINT, TYPE_BIGINT);
-            CASE_TYPE(TYPE_LARGEINT, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_LARGEINT, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_LARGEINT, TYPE_DATE);
-            CASE_TYPE(TYPE_LARGEINT, TYPE_DATETIME);
+            IF_TYPE(TYPE_LARGEINT, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_LARGEINT, TYPE_TINYINT);
+            IF_TYPE(TYPE_LARGEINT, TYPE_SMALLINT);
+            IF_TYPE(TYPE_LARGEINT, TYPE_INT);
+            IF_TYPE(TYPE_LARGEINT, TYPE_BIGINT);
+            IF_TYPE(TYPE_LARGEINT, TYPE_LARGEINT);
+            IF_TYPE(TYPE_LARGEINT, TYPE_VARCHAR);
+            IF_TYPE(TYPE_LARGEINT, TYPE_DATE);
+            IF_TYPE(TYPE_LARGEINT, TYPE_DATETIME);
 
-            CASE_TYPE(TYPE_VARCHAR, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_VARCHAR, TYPE_TINYINT);
-            CASE_TYPE(TYPE_VARCHAR, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_VARCHAR, TYPE_INT);
-            CASE_TYPE(TYPE_VARCHAR, TYPE_BIGINT);
-            CASE_TYPE(TYPE_VARCHAR, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_VARCHAR, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_VARCHAR, TYPE_DATE);
-            CASE_TYPE(TYPE_VARCHAR, TYPE_DATETIME);
+            IF_TYPE(TYPE_VARCHAR, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_VARCHAR, TYPE_TINYINT);
+            IF_TYPE(TYPE_VARCHAR, TYPE_SMALLINT);
+            IF_TYPE(TYPE_VARCHAR, TYPE_INT);
+            IF_TYPE(TYPE_VARCHAR, TYPE_BIGINT);
+            IF_TYPE(TYPE_VARCHAR, TYPE_LARGEINT);
+            IF_TYPE(TYPE_VARCHAR, TYPE_VARCHAR);
+            IF_TYPE(TYPE_VARCHAR, TYPE_DATE);
+            IF_TYPE(TYPE_VARCHAR, TYPE_DATETIME);
 
-            CASE_TYPE(TYPE_DATE, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_DATE, TYPE_TINYINT);
-            CASE_TYPE(TYPE_DATE, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_DATE, TYPE_INT);
-            CASE_TYPE(TYPE_DATE, TYPE_BIGINT);
-            CASE_TYPE(TYPE_DATE, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_DATE, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_DATE, TYPE_DATE);
-            CASE_TYPE(TYPE_DATE, TYPE_DATETIME);
+            IF_TYPE(TYPE_DATE, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_DATE, TYPE_TINYINT);
+            IF_TYPE(TYPE_DATE, TYPE_SMALLINT);
+            IF_TYPE(TYPE_DATE, TYPE_INT);
+            IF_TYPE(TYPE_DATE, TYPE_BIGINT);
+            IF_TYPE(TYPE_DATE, TYPE_LARGEINT);
+            IF_TYPE(TYPE_DATE, TYPE_VARCHAR);
+            IF_TYPE(TYPE_DATE, TYPE_DATE);
+            IF_TYPE(TYPE_DATE, TYPE_DATETIME);
 
-            CASE_TYPE(TYPE_DATETIME, TYPE_BOOLEAN);
-            CASE_TYPE(TYPE_DATETIME, TYPE_TINYINT);
-            CASE_TYPE(TYPE_DATETIME, TYPE_SMALLINT);
-            CASE_TYPE(TYPE_DATETIME, TYPE_INT);
-            CASE_TYPE(TYPE_DATETIME, TYPE_BIGINT);
-            CASE_TYPE(TYPE_DATETIME, TYPE_LARGEINT);
-            CASE_TYPE(TYPE_DATETIME, TYPE_VARCHAR);
-            CASE_TYPE(TYPE_DATETIME, TYPE_DATE);
-            CASE_TYPE(TYPE_DATETIME, TYPE_DATETIME);
+            IF_TYPE(TYPE_DATETIME, TYPE_BOOLEAN);
+            IF_TYPE(TYPE_DATETIME, TYPE_TINYINT);
+            IF_TYPE(TYPE_DATETIME, TYPE_SMALLINT);
+            IF_TYPE(TYPE_DATETIME, TYPE_INT);
+            IF_TYPE(TYPE_DATETIME, TYPE_BIGINT);
+            IF_TYPE(TYPE_DATETIME, TYPE_LARGEINT);
+            IF_TYPE(TYPE_DATETIME, TYPE_VARCHAR);
+            IF_TYPE(TYPE_DATETIME, TYPE_DATE);
+            IF_TYPE(TYPE_DATETIME, TYPE_DATETIME);
 
-#undef CASE_TYPE
+#undef IF_TYPE
             break;
         }
         default:
             break;
         }
         return nullptr;
-    }
-
-    static size_t get_encoded_fixed_size(const Schema& schema) {
-        return PrimaryKeyEncoder::get_encoded_fixed_size(schema);
     }
 };
 
