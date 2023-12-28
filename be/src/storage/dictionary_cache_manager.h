@@ -92,7 +92,7 @@ template <LogicalType KeyLogicalType, LogicalType ValueLogicalType>
 class DictionaryCacheImpl final : public DictionaryCache {
 public:
     static constexpr uint8_t PREFETCHN = 8;
-    static constexpr uint8_t PREFETCHABLE_MAX_SIZE = 40;
+    static constexpr uint8_t PREFETCHABLE_MAX_SIZE = 64;
 
     DictionaryCacheImpl(DictionaryCacheEncoderType type) : DictionaryCache(type), _total_memory_useage(0),
                                                            _prefetchable(true) {}
@@ -268,7 +268,7 @@ private:
 
     phmap::parallel_flat_hash_map<KeyCppType, ValueCppType, DictionaryCacheHashTraits<KeyLogicalType>,
                                   phmap::priv::hash_default_eq<KeyCppType>,
-                                  phmap::priv::Allocator<phmap::priv::Pair<const KeyCppType, ValueCppType>>, 8,
+                                  phmap::priv::Allocator<phmap::priv::Pair<const KeyCppType, ValueCppType>>, 4,
                                   phmap::NullMutex, true>
             _dictionary;
     std::atomic<size_t> _total_memory_useage;
