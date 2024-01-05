@@ -46,7 +46,7 @@ struct DictionaryCacheTypeTraits {
 
 template <>
 struct DictionaryCacheTypeTraits<TYPE_VARCHAR> {
-    using CppType = std::string;
+    using CppType = Slice;
 };
 
 template <>
@@ -67,7 +67,7 @@ struct DictionaryCacheHashTraits {
 
 template <>
 struct DictionaryCacheHashTraits<TYPE_VARCHAR> {
-    inline size_t operator()(const std::string& v) const { return XXH3_64bits(v.data(), v.length()); }
+    inline size_t operator()(const Slice& v) const { return XXH3_64bits(v.data, v.size); }
 };
 
 class DictionaryCache {
@@ -92,10 +92,8 @@ template <LogicalType KeyLogicalType, LogicalType ValueLogicalType>
 class DictionaryCacheImpl final : public DictionaryCache {
 public:
     static constexpr uint8_t PREFETCHN = 8;
-    static constexpr uint8_t PREFETCHABLE_MAX_SIZE = 64;
 
-    DictionaryCacheImpl(DictionaryCacheEncoderType type) : DictionaryCache(type), _total_memory_useage(0),
-                                                           _prefetchable(true) {}
+    DictionaryCacheImpl(DictionaryCacheEncoderType type) : DictionaryCache(type), _total_memory_useage(0) {}
     virtual ~DictionaryCacheImpl() override = default;
 
     using KeyCppType = typename DictionaryCacheTypeTraits<KeyLogicalType>::CppType;
@@ -106,8 +104,29 @@ public:
         case DictionaryCacheEncoderType::PK_ENCODE: {
             KeyCppType key;
             ValueCppType value;
-            _get<KeyCppType>(k, key);
-            _get<ValueCppType>(v, value);
+
+            if constexpr (std::is_same_v<KeyCppType, Slice>) {
+                const Slice& input = k.get<KeyCppType>();
+                auto *buffer = reinterpret_cast<char*>(_pool.allocate(input.size));
+                RETURN_IF_UNLIKELY_NULL(buffer, Status::MemoryAllocFailed("alloc mem for dictionary failed"));
+                memcpy(buffer, input.data, input.size);
+                key.data = buffer;
+                key.size = input.size;
+            } else {
+                key = k.get<KeyCppType>();
+            }
+
+            if constexpr (std::is_same_v<ValueCppType, Slice>) {
+                const Slice& input = v.get<ValueCppType>();
+                auto *buffer = reinterpret_cast<char*>(_pool.allocate(input.size));
+                RETURN_IF_UNLIKELY_NULL(buffer, Status::MemoryAllocFailed("alloc mem for dictionary failed"));
+                memcpy(buffer, input.data, input.size);
+                value.data = buffer;
+                value.size = input.size;
+            } else {
+                value = v.get<ValueCppType>();
+            }
+
             auto r = _dictionary.insert({key, value});
             if (!r.second) {
                 return Status::InternalError("duplicate key found when refreshing dictionary");
@@ -125,33 +144,29 @@ public:
         switch (_type) {
         case DictionaryCacheEncoderType::PK_ENCODE: {
             size_t size = src->size();
-            if constexpr (std::is_same_v<KeyCppType, std::string>) {
+            if constexpr (std::is_same_v<KeyCppType, Slice>) {
                 const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
 
-                if (LIKELY(size >= PREFETCHN * 2) && _prefetchable) {
+                if (LIKELY(size >= 2 * PREFETCHN)) {
                     size_t beg_index = 0;
                     size_t loop = size / PREFETCHN;
 
-                    std::vector<std::string> prefetch_keys(PREFETCHN);
                     size_t prefetch_hashes[PREFETCHN];
-
                     for (size_t i = 0; i < loop; i++) {
                         beg_index = i * PREFETCHN;
 
                         for (size_t j = 0; j < PREFETCHN; j++) {
-                            prefetch_keys[j].assign(raw_data[beg_index + j].data, raw_data[beg_index + j].size);
+                            PREFETCH(&raw_data[beg_index + j]);
+                            PREFETCH(raw_data[beg_index + j].data);
                         }
 
                         for (size_t j = 0; j < PREFETCHN; j++) {
-                            PREFETCH(&prefetch_keys[j]);
-                            PREFETCH(prefetch_keys[j].data());
-
-                            prefetch_hashes[j] = DictionaryCacheHashTraits<TYPE_VARCHAR>()(prefetch_keys[j]);
+                            prefetch_hashes[j] = DictionaryCacheHashTraits<TYPE_VARCHAR>()(raw_data[beg_index + j]);
                             _dictionary.prefetch_hash(prefetch_hashes[j]);
                         }
 
                         for (size_t j = 0; j < PREFETCHN; j++) {
-                            auto iter = _dictionary.find(prefetch_keys[j], prefetch_hashes[j]);
+                            auto iter = _dictionary.find(raw_data[beg_index + j], prefetch_hashes[j]);
                             if (iter == _dictionary.end()) {
                                 return Status::NotFound("key not found in dictionary cache");
                             }
@@ -161,8 +176,7 @@ public:
 
                     beg_index = loop * PREFETCHN;
                     for (size_t i = beg_index; i < size; i++) {
-                        std::string key = std::move(raw_data[i].to_string());
-                        auto iter = _dictionary.find(key);
+                        auto iter = _dictionary.find(raw_data[i]);
                         if (iter == _dictionary.end()) {
                             return Status::NotFound("key not found in dictionary cache");
                         }
@@ -170,8 +184,7 @@ public:
                     }
                 } else {
                     for (size_t i = 0; i < size; i++) {
-                        std::string key = std::move(raw_data[i].to_string());
-                        auto iter = _dictionary.find(key);
+                        auto iter = _dictionary.find(raw_data[i]);
                         if (iter == _dictionary.end()) {
                             return Status::NotFound("key not found in dictionary cache");
                         }
@@ -204,31 +217,11 @@ public:
     virtual std::mutex& lock() override { return _lock; }
 
 private:
-    template <class CppType>
-    inline void _get(const Datum& d, CppType& v) {
-        switch (_type) {
-        case DictionaryCacheEncoderType::PK_ENCODE: {
-            if constexpr (std::is_same_v<CppType, std::string>) {
-                v = std::move(d.get<Slice>().to_string());
-            } else {
-                v = d.get<CppType>();
-            }
-            break;
-        }
-        default:
-            break;
-        }
-        return;
-    }
 
     inline std::shared_ptr<Datum> _get_datum(const ValueCppType& v) {
         switch (_type) {
         case DictionaryCacheEncoderType::PK_ENCODE: {
-            if constexpr (std::is_same_v<ValueCppType, std::string>) {
-                return std::make_shared<Datum>(Slice(v));
-            } else {
-                return std::make_shared<Datum>(v);
-            }
+            return std::make_shared<Datum>(v);
         }
         default:
             break;
@@ -241,20 +234,14 @@ private:
         switch (_type) {
         case DictionaryCacheEncoderType::PK_ENCODE: {
             size_t size = 0;
-            if constexpr (std::is_same_v<KeyCppType, std::string>) {
-                size = k.length();
-                if (_prefetchable && k.length() > PREFETCHABLE_MAX_SIZE) {
-                    _prefetchable = false;
-                }
+            if constexpr (std::is_same_v<KeyCppType, Slice>) {
+                size = k.size;
             } else {
                 size = sizeof(KeyCppType);
             }
 
-            if constexpr (std::is_same_v<ValueCppType, std::string>) {
-                size += v.length();
-                if (_prefetchable && v.length() > PREFETCHABLE_MAX_SIZE) {
-                    _prefetchable = false;
-                }
+            if constexpr (std::is_same_v<ValueCppType, Slice>) {
+                size += v.size;
             } else {
                 size += sizeof(ValueCppType);
             }
@@ -273,7 +260,7 @@ private:
             _dictionary;
     std::atomic<size_t> _total_memory_useage;
     std::mutex _lock;
-    bool _prefetchable;
+    MemPool _pool;
 };
 
 using DictionaryCachePtr = std::shared_ptr<DictionaryCache>;
