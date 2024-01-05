@@ -250,7 +250,12 @@ public class ScalarOperatorsReuse {
 
         @Override
         public ScalarOperator visitDictionaryGetOperator(DictionaryGetOperator predicate, Void context) {
-            return tryRewrite(predicate.clone());
+            ScalarOperator operator = new DictionaryGetOperator(
+                    predicate.getChildren().stream().map(
+                        argument -> argument.accept(this, null)).collect(Collectors.toList()),
+                            predicate.getType(), predicate.getDictionaryId(),
+                                predicate.getDictionaryTxnId(), predicate.getKeySize());
+            return tryRewrite(operator);
         }
 
         @Override
