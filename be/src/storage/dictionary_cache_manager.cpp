@@ -121,6 +121,11 @@ Status DictionaryCacheManager::refresh(const PProcessDictionaryCacheRequest* req
                             dict_id, txn_id));
     }
 
+    std::vector<uint8_t> value_encode_flags(chunk->num_rows(), 1);
+    if (DictionaryCacheUtil::get_encoded_type(*value_schema.get()) == TYPE_VARCHAR) {
+        DictionaryCacheUtil::precheck_value_encode(value_chunk.get(), value_encode_flags);
+    }
+
     auto encoded_value_column = DictionaryCacheUtil::encode_columns(*value_schema.get(), value_chunk.get());
     if (encoded_value_column == nullptr) {
         return Status::InternalError(
@@ -136,14 +141,15 @@ Status DictionaryCacheManager::refresh(const PProcessDictionaryCacheRequest* req
     // 4. refresh
     return _refresh_encoded_chunk(dict_id, txn_id, encoded_key_column.get(), encoded_value_column.get(),
                                   dictionary_schema, DictionaryCacheUtil::get_encoded_type(*key_schema.get()),
-                                  DictionaryCacheUtil::get_encoded_type(*value_schema.get()), memory_limit);
+                                  DictionaryCacheUtil::get_encoded_type(*value_schema.get()), memory_limit,
+                                  value_encode_flags);
 }
 
 Status DictionaryCacheManager::_refresh_encoded_chunk(DictionaryId dict_id, DictionaryCacheTxnId txn_id,
                                                       const Column* encoded_key_column,
                                                       const Column* encoded_value_column, const SchemaPtr& schema,
                                                       LogicalType key_encoded_type, LogicalType value_encoded_type,
-                                                      long memory_limit) {
+                                                      long memory_limit, const std::vector<uint8_t>& value_encode_flags) {
     DCHECK(key_encoded_type != TYPE_NONE);
     DCHECK(value_encoded_type != TYPE_NONE);
 
@@ -196,7 +202,7 @@ Status DictionaryCacheManager::_refresh_encoded_chunk(DictionaryId dict_id, Dict
     for (size_t i = 0; i < encoded_key_column->size(); ++i) {
         auto key = encoded_key_column->get(i);
         auto value = encoded_value_column->get(i);
-        RETURN_IF_ERROR(mutable_cache->insert(key, value));
+        RETURN_IF_ERROR(mutable_cache->insert(key, value, value_encode_flags[i]));
     }
 
     if (mutable_cache->memory_usage() > memory_limit) {

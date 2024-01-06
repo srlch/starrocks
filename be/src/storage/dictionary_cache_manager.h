@@ -75,9 +75,9 @@ public:
     DictionaryCache(DictionaryCacheEncoderType type) : _type(type) {}
     virtual ~DictionaryCache() = default;
 
-    virtual inline Status insert(const Datum& k, const Datum& v) = 0;
+    virtual inline Status insert(const Datum& k, const Datum& v, const uint8_t& flag) = 0;
 
-    virtual inline Status lookup(Column* src, Column* dest) = 0;
+    virtual inline Status lookup(Column* src, Column* dest, std::vector<uint8_t>& value_encode_flags) = 0;
 
     virtual inline size_t memory_usage() = 0;
 
@@ -99,7 +99,7 @@ public:
     using KeyCppType = typename DictionaryCacheTypeTraits<KeyLogicalType>::CppType;
     using ValueCppType = typename DictionaryCacheTypeTraits<ValueLogicalType>::CppType;
  
-    virtual inline Status insert(const Datum& k, const Datum& v) override {
+    virtual inline Status insert(const Datum& k, const Datum& v, const uint8_t& flag) override {
         switch (_type) {
         case DictionaryCacheEncoderType::PK_ENCODE: {
             KeyCppType key;
@@ -118,8 +118,11 @@ public:
 
             if constexpr (std::is_same_v<ValueCppType, Slice>) {
                 const Slice& input = v.get<ValueCppType>();
-                auto *buffer = reinterpret_cast<char*>(_pool.allocate(input.size));
+                size_t allocate_size = input.size + sizeof(uint8_t);
+                auto *buffer = reinterpret_cast<char*>(_pool.allocate(allocate_size));
                 RETURN_IF_UNLIKELY_NULL(buffer, Status::MemoryAllocFailed("alloc mem for dictionary failed"));
+                memcpy(buffer, &flag, sizeof(uint8_t));
+                buffer += sizeof(uint8_t);
                 memcpy(buffer, input.data, input.size);
                 value.data = buffer;
                 value.size = input.size;
@@ -140,7 +143,7 @@ public:
         return Status::OK();
     }
 
-    virtual inline Status lookup(Column* src, Column* dest) override {
+    virtual inline Status lookup(Column* src, Column* dest, std::vector<uint8_t>& value_encode_flags) override {
         switch (_type) {
         case DictionaryCacheEncoderType::PK_ENCODE: {
             size_t size = src->size();
@@ -171,6 +174,9 @@ public:
                                 return Status::NotFound("key not found in dictionary cache");
                             }
                             dest->append_datum(*_get_datum(iter->second));
+                            if constexpr (std::is_same_v<ValueCppType, Slice>) {
+                                value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);   
+                            }
                         }
                     }
 
@@ -181,6 +187,9 @@ public:
                             return Status::NotFound("key not found in dictionary cache");
                         }
                         dest->append_datum(*_get_datum(iter->second));
+                        if constexpr (std::is_same_v<ValueCppType, Slice>) {
+                            value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);   
+                        }
                     }
                 } else {
                     for (size_t i = 0; i < size; i++) {
@@ -189,6 +198,9 @@ public:
                             return Status::NotFound("key not found in dictionary cache");
                         }
                         dest->append_datum(*_get_datum(iter->second));
+                        if constexpr (std::is_same_v<ValueCppType, Slice>) {
+                            value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);
+                        }
                     }
                 }
             } else {
@@ -201,6 +213,9 @@ public:
                         return Status::NotFound("key not found in dictionary cache");
                     }
                     dest->append_datum(*_get_datum(iter->second));
+                    if constexpr (std::is_same_v<ValueCppType, Slice>) {
+                        value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);   
+                    }
                 }
             }
             break;
@@ -294,15 +309,53 @@ public:
     }
 
     static Status decode_columns(const Schema& schema, Column* column, Chunk* decoded_chunk,
+                                 std::vector<uint8_t>* value_encode_flags,
                                  const DictionaryCacheEncoderType& encoder_type = PK_ENCODE) {
         switch (encoder_type) {
         case PK_ENCODE: {
-            return PrimaryKeyEncoder::decode(schema, *column, 0, column->size(), decoded_chunk);
+            return PrimaryKeyEncoder::decode(schema, *column, 0, column->size(), decoded_chunk,
+                                             value_encode_flags);
         }
         default:
             break;
         }
         return Status::InternalError("decode failed for dictionary");
+    }
+
+    static void precheck_value_encode(const Chunk* chunk, std::vector<uint8_t>& value_encode_flags) {
+        bool has_varchar = false;
+        for (const auto& f : chunk->schema()->fields()) {
+            if (f->type()->type() == TYPE_VARCHAR) {
+                has_varchar = true;
+                break;
+            }
+        }
+
+        if (!has_varchar) {
+            return;
+        }
+
+        size_t size = chunk->num_rows();
+        for (int idx = 0; idx < chunk->num_columns(); idx++) {
+            if (chunk->schema()->fields()[idx]->type()->type() != TYPE_VARCHAR) {
+                continue;
+            }
+            
+            const auto& src = chunk->get_column_by_index(idx);
+            const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
+            for (int i = 0; i < size; i++) {
+                bool contains_zero = false;
+                for (int j = 0; j < raw_data[i].size; j++) {
+                    if (raw_data[i][j] == '\0') {
+                        contains_zero = true;
+                        break;
+                    }
+                }
+                if (value_encode_flags[i] && contains_zero) {
+                    value_encode_flags[i] = 0;
+                }
+            }
+        }
     }
 
     static LogicalType get_encoded_type(const Schema& schema,
@@ -481,16 +534,23 @@ public:
             return Status::InternalError("encode dictionary cache column failed when probing the dictionary cache");
         }
 
-        RETURN_IF_ERROR(dictionary->lookup(encoded_key_column.get(), encoded_value_column.get()));
+        std::vector<uint8_t> value_encode_flags(size, 1);
+        RETURN_IF_ERROR(dictionary->lookup(encoded_key_column.get(), encoded_value_column.get(), value_encode_flags));
         DCHECK(encoded_value_column->size() == size);
 
-        return DictionaryCacheUtil::decode_columns(value_schema, encoded_value_column.get(), value_chunk.get());
+        OlapStopWatch w;
+        auto st = DictionaryCacheUtil::decode_columns(value_schema, encoded_value_column.get(), value_chunk.get(),
+                                                      &value_encode_flags);
+        auto w_time = w.get_elapse_second();
+        LOG(INFO) << "decoding time: " << w_time;
+        return st;
     }
 
 private:
     Status _refresh_encoded_chunk(DictionaryId dict_id, DictionaryCacheTxnId txn_id, const Column* encoded_key_column,
                                   const Column* encoded_value_column, const SchemaPtr& schema,
-                                  LogicalType key_encoded_type, LogicalType value_encoded_type, long memory_limit);
+                                  LogicalType key_encoded_type, LogicalType value_encoded_type, long memory_limit,
+                                  const std::vector<uint8_t>& value_encode_flags);
 
     // dictionary id -> DictionaryCache
     std::unordered_map<DictionaryId, DictionaryCachePtr> _dict_cache;
