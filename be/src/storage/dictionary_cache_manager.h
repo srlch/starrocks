@@ -147,42 +147,33 @@ public:
         switch (_type) {
         case DictionaryCacheEncoderType::PK_ENCODE: {
             size_t size = src->size();
-            if constexpr (std::is_same_v<KeyCppType, Slice>) {
-                const auto* raw_data = reinterpret_cast<const Slice*>(src->raw_data());
+            const auto* raw_data = reinterpret_cast<const KeyCppType*>(src->raw_data());
 
-                if (LIKELY(size >= 2 * PREFETCHN)) {
-                    size_t beg_index = 0;
-                    size_t loop = size / PREFETCHN;
+            if (LIKELY(size >= 2 * PREFETCHN)) {
+                size_t beg_index = 0;
+                size_t loop = size / PREFETCHN;
 
-                    size_t prefetch_hashes[PREFETCHN];
-                    for (size_t i = 0; i < loop; i++) {
-                        beg_index = i * PREFETCHN;
+                size_t prefetch_hashes[PREFETCHN];
+                for (size_t i = 0; i < loop; i++) {
+                    beg_index = i * PREFETCHN;
 
+                    if constexpr (std::is_same_v<KeyCppType, Slice>) {
                         for (size_t j = 0; j < PREFETCHN; j++) {
                             PREFETCH(&raw_data[beg_index + j]);
                             PREFETCH(raw_data[beg_index + j].data);
                         }
-
-                        for (size_t j = 0; j < PREFETCHN; j++) {
-                            prefetch_hashes[j] = DictionaryCacheHashTraits<TYPE_VARCHAR>()(raw_data[beg_index + j]);
-                            _dictionary.prefetch_hash(prefetch_hashes[j]);
-                        }
-
-                        for (size_t j = 0; j < PREFETCHN; j++) {
-                            auto iter = _dictionary.find(raw_data[beg_index + j], prefetch_hashes[j]);
-                            if (iter == _dictionary.end()) {
-                                return Status::NotFound("key not found in dictionary cache");
-                            }
-                            dest->append_datum(*_get_datum(iter->second));
-                            if constexpr (std::is_same_v<ValueCppType, Slice>) {
-                                value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);   
-                            }
-                        }
+                    } else {
+                        // fill all keys into cacheline
+                        (void)raw_data[beg_index];
                     }
 
-                    beg_index = loop * PREFETCHN;
-                    for (size_t i = beg_index; i < size; i++) {
-                        auto iter = _dictionary.find(raw_data[i]);
+                    for (size_t j = 0; j < PREFETCHN; j++) {
+                        prefetch_hashes[j] = DictionaryCacheHashTraits<KeyLogicalType>()(raw_data[beg_index + j]);
+                        _dictionary.prefetch_hash(prefetch_hashes[j]);
+                    }
+
+                    for (size_t j = 0; j < PREFETCHN; j++) {
+                        auto iter = _dictionary.find(raw_data[beg_index + j], prefetch_hashes[j]);
                         if (iter == _dictionary.end()) {
                             return Status::NotFound("key not found in dictionary cache");
                         }
@@ -191,23 +182,10 @@ public:
                             value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);   
                         }
                     }
-                } else {
-                    for (size_t i = 0; i < size; i++) {
-                        auto iter = _dictionary.find(raw_data[i]);
-                        if (iter == _dictionary.end()) {
-                            return Status::NotFound("key not found in dictionary cache");
-                        }
-                        dest->append_datum(*_get_datum(iter->second));
-                        if constexpr (std::is_same_v<ValueCppType, Slice>) {
-                            value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);
-                        }
-                    }
                 }
-            } else {
-                const auto* raw_data = reinterpret_cast<const KeyCppType*>(src->raw_data());
-                for (auto i = 0; i < size; i++) {
-                    uint32_t prefetch_i = i + PREFETCHN;
-                    if (LIKELY(prefetch_i < size)) _dictionary.prefetch(raw_data[prefetch_i]);
+
+                beg_index = loop * PREFETCHN;
+                for (size_t i = beg_index; i < size; i++) {
                     auto iter = _dictionary.find(raw_data[i]);
                     if (iter == _dictionary.end()) {
                         return Status::NotFound("key not found in dictionary cache");
@@ -215,6 +193,17 @@ public:
                     dest->append_datum(*_get_datum(iter->second));
                     if constexpr (std::is_same_v<ValueCppType, Slice>) {
                         value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);   
+                    }
+                }
+            } else {
+                for (size_t i = 0; i < size; i++) {
+                    auto iter = _dictionary.find(raw_data[i]);
+                    if (iter == _dictionary.end()) {
+                        return Status::NotFound("key not found in dictionary cache");
+                    }
+                    dest->append_datum(*_get_datum(iter->second));
+                    if constexpr (std::is_same_v<ValueCppType, Slice>) {
+                        value_encode_flags[i] = *(reinterpret_cast<uint8_t*>(iter->second.data) - 1);
                     }
                 }
             }
@@ -538,12 +527,8 @@ public:
         RETURN_IF_ERROR(dictionary->lookup(encoded_key_column.get(), encoded_value_column.get(), value_encode_flags));
         DCHECK(encoded_value_column->size() == size);
 
-        OlapStopWatch w;
-        auto st = DictionaryCacheUtil::decode_columns(value_schema, encoded_value_column.get(), value_chunk.get(),
-                                                      &value_encode_flags);
-        auto w_time = w.get_elapse_second();
-        LOG(INFO) << "decoding time: " << w_time;
-        return st;
+        return DictionaryCacheUtil::decode_columns(value_schema, encoded_value_column.get(), value_chunk.get(),
+                                                   &value_encode_flags);
     }
 
 private:

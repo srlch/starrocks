@@ -133,7 +133,7 @@ Status ResultSinkOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk
         return _last_error;
     }
     DCHECK(_fetch_data_result.empty());
-
+    chunk->reset();
     auto status = _writer->process_chunk(chunk.get());
     if (status.ok()) {
         _fetch_data_result = std::move(status.value());
