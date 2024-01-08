@@ -56,6 +56,7 @@ StatusOr<ColumnPtr> DictionaryGetExpr::evaluate_checked(ExprContext* context, Ch
         ColumnPtr key_column = columns[1 + i];
         key_chunk->update_column_by_index(key_column, i);
     }
+    value_chunk->reserve(size);
 
     // assign the value chunk
     RETURN_IF_ERROR(DictionaryCacheManager::probe_given_dictionary_cache(

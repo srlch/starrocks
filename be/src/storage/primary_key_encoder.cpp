@@ -226,27 +226,34 @@ inline Status decode_slice(Slice* src, std::string* dest, Slice* dest_fast, bool
             dest_fast->size = src->size;
         }
     } else {
-        auto* separator = static_cast<uint8_t*>(memmem(src->data, src->size, "\0\0", 2));
-        DCHECK(separator) << "bad encoded primary key, separator not found";
-        if (PREDICT_FALSE(separator == nullptr)) {
-            LOG(WARNING) << "bad encoded primary key, separator not found";
-            return Status::InvalidArgument("bad encoded primary key, separator not found");
-        }
-        auto* data = (uint8_t*)src->data;
-        int len = separator - data;
         if (!fast_decode) {
+            auto* separator = static_cast<uint8_t*>(memmem(src->data, src->size, "\0\0", 2));
+            DCHECK(separator) << "bad encoded primary key, separator not found";
+            if (PREDICT_FALSE(separator == nullptr)) {
+                LOG(WARNING) << "bad encoded primary key, separator not found";
+                return Status::InvalidArgument("bad encoded primary key, separator not found");
+            }
+            auto* data = (uint8_t*)src->data;
+            int len = separator - data;
             for (int i = 0; i < len; i++) {
                 if (i >= 1 && data[i - 1] == '\0' && data[i] == '\1') {
                     continue;
                 }
                 dest->push_back((char)data[i]);
             }
-            LOG(WARNING) << "uncorrect decode path";
+            src->remove_prefix(len + 2);
         } else {
+            void* separator = std::memchr(src->data, '\0', src->size);
+            DCHECK(separator) << "bad encoded primary key, separator not found";
+            if (PREDICT_FALSE(separator == nullptr)) {
+                LOG(WARNING) << "bad encoded primary key, separator not found";
+                return Status::InvalidArgument("bad encoded primary key, separator not found");
+            }
+
             dest_fast->data = src->data;
-            dest_fast->size = len;
+            dest_fast->size = (uint8_t*)separator - (uint8_t*)src->data;
+            src->remove_prefix(dest_fast->size + 2);
         }
-        src->remove_prefix(len + 2);
     }
     return Status::OK();
 }

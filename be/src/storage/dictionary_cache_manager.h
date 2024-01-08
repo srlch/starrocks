@@ -35,6 +35,13 @@
 
 namespace starrocks {
 
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <mmintrin.h>
+#define PREFETCH_ADDR(addr) _mm_prefetch((const char*)(addr), _MM_HINT_T0)
+#elif defined(__GNUC__)
+#define PREFETCH_ADDR(addr) __builtin_prefetch(static_cast<const void*>(addr), 0 /* rw==read */, 3 /* locality */)
+#endif // __GNUC__
+
 enum DictionaryCacheEncoderType {
     PK_ENCODE = 0,
 };
@@ -159,11 +166,11 @@ public:
 
                     if constexpr (std::is_same_v<KeyCppType, Slice>) {
                         for (size_t j = 0; j < PREFETCHN; j++) {
-                            PREFETCH(&raw_data[beg_index + j]);
-                            PREFETCH(raw_data[beg_index + j].data);
+                            PREFETCH_ADDR(&raw_data[beg_index + j]);
+                            PREFETCH_ADDR(raw_data[beg_index + j].data);
                         }
                     } else {
-                        // fill all keys into cacheline
+                        if (LIKELY(i != loop - 1)) PREFETCH_ADDR(&raw_data[beg_index + PREFETCHN]);
                         (void)raw_data[beg_index];
                     }
 
@@ -515,9 +522,7 @@ public:
         size_t size = key_chunk->num_rows();
 
         auto encoded_key_column = DictionaryCacheUtil::encode_columns(key_schema, key_chunk.get());
-
-        ChunkUniquePtr clone_value_chunk = value_chunk->clone_empty();
-        auto encoded_value_column = DictionaryCacheUtil::encode_columns(value_schema, clone_value_chunk.get());
+        auto encoded_value_column = DictionaryCacheUtil::encode_columns(value_schema, value_chunk.get());
 
         if (encoded_key_column == nullptr || encoded_value_column == nullptr) {
             return Status::InternalError("encode dictionary cache column failed when probing the dictionary cache");
