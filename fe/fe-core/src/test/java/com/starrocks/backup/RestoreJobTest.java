@@ -54,6 +54,7 @@ import com.starrocks.catalog.PhysicalPartition;
 import com.starrocks.catalog.Table;
 import com.starrocks.catalog.Tablet;
 import com.starrocks.common.AnalysisException;
+import com.starrocks.common.Config;
 import com.starrocks.common.jmockit.Deencapsulation;
 import com.starrocks.common.util.concurrent.MarkedCountDownLatch;
 import com.starrocks.common.util.concurrent.lock.LockType;
@@ -555,5 +556,19 @@ public class RestoreJobTest {
         System.out.println("tbl signature: " + tbl.getSignature(BackupHandler.SIGNATURE_VERSION, partNames, true));
     }
 
+    @Test
+    public void testReplayAddExpiredJob() {
+        job = new RestoreJob(label, "2018-01-01 01:01:01", db.getId() + 999, db.getFullName() + "xxx",
+                jobInfo, false, 3, 100000,
+                globalStateMgr, repo.getId(), backupMeta, new MvRestoreContext());
+        job.setState(RestoreJob.RestoreJobState.PENDING);
+        backupHandler.replayAddJob(job);
+        job.setState(RestoreJob.RestoreJobState.COMMIT);
+        backupHandler.replayAddJob(job);
+        job.setState(RestoreJob.RestoreJobState.FINISHED);
+        int oldValue = Config.history_job_keep_max_second;
+        Config.history_job_keep_max_second = 0;
+        backupHandler.replayAddJob(job);
+        Config.history_job_keep_max_second = oldValue;
+    }
 }
-
