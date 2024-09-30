@@ -167,6 +167,7 @@ import com.starrocks.persist.ReplicaPersistInfo;
 import com.starrocks.persist.SetReplicaStatusOperationLog;
 import com.starrocks.persist.TableInfo;
 import com.starrocks.persist.TruncateTableInfo;
+import com.starrocks.persist.gson.GsonUtils;
 import com.starrocks.persist.metablock.SRMetaBlockEOFException;
 import com.starrocks.persist.metablock.SRMetaBlockException;
 import com.starrocks.persist.metablock.SRMetaBlockID;
@@ -5193,6 +5194,10 @@ public class LocalMetastore implements ConnectorMetadata, MVRepairHandler, Memor
             writer.writeJson(database.getTables().size());
             List<Table> tables = database.getTables();
             for (Table table : tables) {
+                if (table.getName().equals("activity")) {
+                    String jsonString = GsonUtils.GSON.toJson(table);
+                    LOG.info("test_json_result: " + jsonString);
+                }
                 writer.writeJson(table);
             }
         }
