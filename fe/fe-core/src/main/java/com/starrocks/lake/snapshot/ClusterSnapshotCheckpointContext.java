@@ -70,10 +70,9 @@ public class ClusterSnapshotCheckpointContext {
         }
     }
 
-    // return: Pair<continueToCheckpoint, Pair<checkpointId, needToUploadImage>>
-    public synchronized Pair<Boolean, Pair<Long, Boolean>> coordinateTwoCheckpointsIfNeeded(boolean belongToGlobalStateMgr,
-                                                                                            boolean checkpointIsReady) {
-        boolean continueToCheckpoint = false;
+    // return: Pair<checkpointId, needToUploadImage>
+    public synchronized Pair<Long, Boolean> coordinateTwoCheckpointsIfNeeded(boolean belongToGlobalStateMgr,
+                                                                             boolean checkpointIsReady) {
         long checkpointId = INVALID_JOURANL_ID;
         boolean needToUploadImage = false;
         do {
@@ -83,14 +82,12 @@ public class ClusterSnapshotCheckpointContext {
                     setCurErrMsg("Cancelled by user");
                     resetRound(true);
                 }
-                continueToCheckpoint = true; /* continue normal checkpoint */
                 break;
             }
 
             // step 1: if the checkpoint id has been allocated by the peer, use it
             checkpointId = acquireAllocatedIdByPeer(belongToGlobalStateMgr);
             if (checkpointId != INVALID_JOURANL_ID) {
-                continueToCheckpoint = true;
                 needToUploadImage = true;
                 break;
             }
@@ -111,7 +108,7 @@ public class ClusterSnapshotCheckpointContext {
             }
 
             // step 4: check the peer status from the previous round
-            if (!selfPeerRoundIsSuccess(belongToGlobalStateMgr)) {
+            if (!peerPreviousRoundIsSuccess(belongToGlobalStateMgr)) {
                 break;
             }
 
@@ -123,7 +120,7 @@ public class ClusterSnapshotCheckpointContext {
 
             if (job == null) {
                 job = GlobalStateMgr.getCurrentState().getClusterSnapshotMgr()
-                                                    .createNewAutomatedSnapshotJob(); /* INITIALIZING state */
+                                                      .createNewAutomatedSnapshotJob(); /* INITIALIZING state */
             }
 
             Pair<Long, Long> consistentIds = captureConsistentCheckpointIdBetweenFEAndStarMgr();
@@ -136,7 +133,7 @@ public class ClusterSnapshotCheckpointContext {
                 // continue normal checkpoint here if and only if
                 // 1. can not allocate the consistent ids.
                 // 2. checkpoint is not ready and it’s not long enough since the last snapshot
-                continueToCheckpoint = true;
+                break;
             }
 
             // step 6: new round begin
@@ -151,11 +148,10 @@ public class ClusterSnapshotCheckpointContext {
                 this.curFEJouranlId = consistentIds.first;
                 checkpointId = consistentIds.second;
             }
-            continueToCheckpoint = true;
             needToUploadImage = true;
         } while (false);
 
-        return Pair.create(continueToCheckpoint, Pair.create(checkpointId, needToUploadImage));
+        return Pair.create(checkpointId, needToUploadImage);
     }
 
     public void handleImageUpload(Pair<Boolean, String> createImageRet, boolean checkpointIsReady, String imageDir,
@@ -199,7 +195,7 @@ public class ClusterSnapshotCheckpointContext {
         return !(belongToGlobalStateMgr && !previousFERoundFinished || !belongToGlobalStateMgr && !previousStarMgrRoundFinished);
     }
 
-    private boolean selfPeerRoundIsSuccess(boolean belongToGlobalStateMgr) {
+    private boolean peerPreviousRoundIsSuccess(boolean belongToGlobalStateMgr) {
         return !(belongToGlobalStateMgr && !previousStarMgrRoundFinished || !belongToGlobalStateMgr && !previousFERoundFinished);
     }
 

@@ -130,14 +130,11 @@ public class CheckpointController extends FrontendDaemon {
 
         // Step 1: coordinate two checkpoint threads and get consistents ids for checkpoint if needed
         // when the automated cluster snapshot backup is enabled
-        Pair<Boolean, Pair<Long, Boolean>> coordinateRet = CLUSTER_SNAPSHOT_CONTEXT.coordinateTwoCheckpointsIfNeeded(
-                                                                belongToGlobalStateMgr, imageJournalId < maxJournalId);
-        boolean continueToCheckpoint = coordinateRet.first;
-        Long checkpointId = coordinateRet.second.first;
-        boolean needToUploadImage = coordinateRet.second.second;
-        if (!continueToCheckpoint) {
-            return;
-        } else if (checkpointId != ClusterSnapshotCheckpointContext.INVALID_JOURANL_ID) {
+        Pair<Long, Boolean> coordinateRet = CLUSTER_SNAPSHOT_CONTEXT.coordinateTwoCheckpointsIfNeeded(
+                                                                     belongToGlobalStateMgr, imageJournalId < maxJournalId);
+        Long checkpointId = coordinateRet.first;
+        boolean needToUploadImage = coordinateRet.second;
+        if (checkpointId != ClusterSnapshotCheckpointContext.INVALID_JOURANL_ID) {
             // use new checkpoint journal id
             maxJournalId = checkpointId;
             String imageRole = belongToGlobalStateMgr ? "Fe image " : "starMgr image ";
