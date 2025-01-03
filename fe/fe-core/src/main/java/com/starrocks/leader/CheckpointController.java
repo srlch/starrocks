@@ -44,6 +44,7 @@ import com.starrocks.http.meta.MetaService;
 import com.starrocks.journal.CheckpointException;
 import com.starrocks.journal.CheckpointWorker;
 import com.starrocks.journal.Journal;
+import com.starrocks.lake.snapshot.ClusterSnapshotCheckpointContext;
 import com.starrocks.metric.MetricRepo;
 import com.starrocks.persist.ImageFormatVersion;
 import com.starrocks.persist.MetaCleaner;
@@ -86,6 +87,7 @@ public class CheckpointController extends FrontendDaemon {
     private static final int PUT_TIMEOUT_SECOND = 3600;
     private static final int CONNECT_TIMEOUT_SECOND = 1;
     private static final int READ_TIMEOUT_SECOND = 1;
+    private static final ClusterSnapshotCheckpointContext CLUSTER_SNAPSHOT_CONTEXT = new ClusterSnapshotCheckpointContext();
 
     private String imageDir;
     private final Journal journal;
@@ -126,7 +128,20 @@ public class CheckpointController extends FrontendDaemon {
             return;
         }
 
-        // Step 1: create image
+        // Step 1: coordinate two checkpoint threads and get consistents ids for checkpoint if needed
+        // when the automated cluster snapshot backup is enabled
+        long coordinationJournalId = CLUSTER_SNAPSHOT_CONTEXT.coordinateTwoCheckpointsIfNeeded(
+                                                     belongToGlobalStateMgr, imageJournalId < maxJournalId);
+        // if coordination is triggered because of automated cluster snapshot, the follow checkpoint will use
+        // new journal id to make sure the consistency.
+        // checkpointId != INVALID_JOURANL_ID means coordination has been triggered.
+        if (coordinationJournalId != ClusterSnapshotCheckpointContext.INVALID_JOURANL_ID) {
+            maxJournalId = coordinationJournalId;
+            String imageRole = belongToGlobalStateMgr ? "Fe image " : "starMgr image ";
+            LOG.info(imageRole + "get consistent checkpoint id: {} " + "for automated cluster snapshot backup", maxJournalId);
+        }
+
+        // Step 2: create image
         Pair<Boolean, String> createImageRet = Pair.create(false, "");
         if (imageJournalId < maxJournalId) {
             this.journalId = maxJournalId;
@@ -143,14 +158,19 @@ public class CheckpointController extends FrontendDaemon {
             }
         }
 
-        // Step2: push image
+        // Step 3: push image
         int needToPushCnt = nodesToPushImage.size();
         long newImageVersion = createImageRet.first ? maxJournalId : imageJournalId;
         if (needToPushCnt > 0) {
             pushImage(newImageVersion);
         }
 
-        // Step3: Delete old journals
+        // Step 4: upload image for cluster snapshot
+        if (coordinationJournalId != ClusterSnapshotCheckpointContext.INVALID_JOURANL_ID) {
+            CLUSTER_SNAPSHOT_CONTEXT.handleImageUpload(createImageRet.first, createImageRet.second, imageDir, belongToGlobalStateMgr);
+        }
+
+        // Step 5: Delete old journals
         // conditions: 1. new image created and no others node to push, this means there is only one FE in the cluster,
         //                delete the old journals immediately.
         //             2. needToPushCnt > 0 means there are other nodes in the cluster,
@@ -163,6 +183,7 @@ public class CheckpointController extends FrontendDaemon {
 
     private void init() {
         this.imageDir = GlobalStateMgr.getServingState().getImageDir() + subDir;
+        CLUSTER_SNAPSHOT_CONTEXT.setJournal(this.journal, this.belongToGlobalStateMgr);
     }
 
     private Pair<Boolean, String> createImage() {
