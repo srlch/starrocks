@@ -203,6 +203,8 @@ import com.starrocks.thrift.TCreatePartitionResult;
 import com.starrocks.thrift.TDBPrivDesc;
 import com.starrocks.thrift.TDescribeTableParams;
 import com.starrocks.thrift.TDescribeTableResult;
+import com.starrocks.thrift.TDynamicTabletJobsRequest;
+import com.starrocks.thrift.TDynamicTabletJobsResponse;
 import com.starrocks.thrift.TExecPlanFragmentParams;
 import com.starrocks.thrift.TExprNode;
 import com.starrocks.thrift.TFeLocksReq;
@@ -3216,6 +3218,11 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         TUpdateFailPointResponse response = new TUpdateFailPointResponse();
         response.setStatus(status);
         return response;
+    }
+
+    @Override
+    public TDynamicTabletJobsResponse getDynamicTabletJobsInfo(TDynamicTabletJobsRequest params) {
+        return GlobalStateMgr.getCurrentState().getDynamicTabletJobMgr().getAllJobsInfo();
     }
 
     @NotNull
