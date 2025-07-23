@@ -251,7 +251,7 @@ public class FullVacuumDaemon extends FrontendDaemon implements Writable {
         retainVersions.addAll(clusterSnapshotMgr.getVacuumRetainVersions(
                               db.getId(), table.getId(), partition.getParentId(), partition.getId()));
         long minCheckVersion = 0;
-        long maxCheckVersion = visibleVersion - 1; // no need to check visibleVersion
+        long maxCheckVersion = visibleVersion;
         vacuumFullRequest.setMinCheckVersion(minCheckVersion);
         vacuumFullRequest.setMaxCheckVersion(maxCheckVersion);
         vacuumFullRequest.setRetainVersions(retainVersions);
