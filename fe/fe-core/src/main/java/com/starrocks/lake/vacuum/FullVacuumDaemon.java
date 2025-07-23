@@ -216,6 +216,7 @@ public class FullVacuumDaemon extends FrontendDaemon implements Writable {
                 // protected
                 List<Long> shardIds = new ArrayList<>();
                 try {
+                    // TODO: check every single tablet/shard if it hits the index id in snapshot info
                     shardIds = GlobalStateMgr.getCurrentState().getStarOSAgent().listShard(shardGroupId);
                 } catch (Exception e) {
                     LOG.warn("get shard ids from starMgr failed in full vacuum daemon, shard group: {}, {}",
