@@ -28,7 +28,7 @@ import com.starrocks.common.io.Writable;
 import com.starrocks.common.util.FrontendDaemon;
 import com.starrocks.common.util.concurrent.lock.LockType;
 import com.starrocks.common.util.concurrent.lock.Locker;
-import com.starrocks.lake.LakeTablet;
+import com.starrocks.lake.snapshot.ClusterSnapshotMgr;
 import com.starrocks.proto.VacuumFullRequest;
 import com.starrocks.proto.VacuumFullResponse;
 import com.starrocks.rpc.BrpcProxy;
@@ -37,7 +37,6 @@ import com.starrocks.rpc.RpcException;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.server.WarehouseManager;
 import com.starrocks.system.ComputeNode;
-import com.starrocks.warehouse.Warehouse;
 import org.apache.hadoop.util.BlockingThreadPoolExecutorService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -54,12 +53,13 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 import static com.starrocks.rpc.LakeService.TIMEOUT_VACUUM_FULL;
 
 public class FullVacuumDaemon extends FrontendDaemon implements Writable {
     private static final Logger LOG = LogManager.getLogger(FullVacuumDaemon.class);
+
+    private static final long MILLISECONDS_PER_SECOND = 1000;
 
     private final Set<Long> vacuumingPartitions = Sets.newConcurrentHashSet();
 
@@ -169,12 +169,14 @@ public class FullVacuumDaemon extends FrontendDaemon implements Writable {
         long visibleVersion;
         long startTime = System.currentTimeMillis();
         long minActiveTxnId = computeMinActiveTxnId(db, table);
+        Set<Long> shardGroupIds = new HashSet<>();
 
         Locker locker = new Locker();
         locker.lockTablesWithIntensiveDbLock(db.getId(), Lists.newArrayList(table.getId()), LockType.READ);
         try {
-            for (MaterializedIndex index : partition.getMaterializedIndices(MaterializedIndex.IndexExtState.VISIBLE)) {
+            for (MaterializedIndex index : partition.getMaterializedIndices(MaterializedIndex.IndexExtState.ALL)) {
                 tablets.addAll(index.getTablets());
+                shardGroupIds.add(index.getShardGroupId());
             }
             visibleVersion = partition.getVisibleVersion();
         } finally {
@@ -187,14 +189,13 @@ public class FullVacuumDaemon extends FrontendDaemon implements Writable {
             return;
         }
 
+        ClusterSnapshotMgr clusterSnapshotMgr = GlobalStateMgr.getCurrentState().getClusterSnapshotMgr();
         WarehouseManager warehouseManager = GlobalStateMgr.getCurrentState().getWarehouseMgr();
-        Warehouse warehouse = warehouseManager.getBackgroundWarehouse();
-        List<Long> allTabletIds = new ArrayList<>(tablets.size());
+        Set<Long> allTabletIds = new HashSet<>();
         Set<ComputeNode> involvedNodes = new HashSet<>();
 
         for (Tablet tablet : tablets) {
-            LakeTablet lakeTablet = (LakeTablet) tablet;
-            ComputeNode node = warehouseManager.getComputeNodeAssignedToTablet(warehouse.getId(), lakeTablet);
+            ComputeNode node = warehouseManager.getComputeNodeAssignedToTablet(WarehouseManager.DEFAULT_RESOURCE, tablet.getId());
 
             if (node == null) {
                 LOG.error("Could not get CN for tablet={}, returning early.", tablet.getId());
@@ -203,15 +204,48 @@ public class FullVacuumDaemon extends FrontendDaemon implements Writable {
             allTabletIds.add(tablet.getId());
             involvedNodes.add(node);
         }
+
+        for (Long shardGroupId : shardGroupIds) {
+            long dbId = db.getId();
+            long tableId = table.getId();
+            long partId = partition.getParentId();
+            long physicalPartId = partition.getId();
+            if (GlobalStateMgr.getCurrentState().getClusterSnapshotMgr().isShardGroupIdInClusterSnapshotInfo(
+                    dbId, tableId, partId, physicalPartId, shardGroupId)) {
+                // if the shardGroupId exists in cluster snapshot info, all tablet/shard in this shard group should be
+                // protected
+                List<Long> shardIds = new ArrayList<>();
+                try {
+                    shardIds = GlobalStateMgr.getCurrentState().getStarOSAgent().listShard(shardGroupId);
+                } catch (Exception e) {
+                    LOG.warn("get shard ids from starMgr failed in full vacuum daemon, shard group: {}, {}",
+                             shardGroupId, e.getMessage());
+                    return;
+                }
+                allTabletIds.addAll(shardIds);
+            }
+        }
+
         VacuumFullRequest vacuumFullRequest = new VacuumFullRequest();
         vacuumFullRequest.setPartitionId(partition.getId());
         // All tablet ids must be part of the request, since the CN will delete any + all tablets unspecified by the request.
-        vacuumFullRequest.setTabletIds(allTabletIds);
-        // TODO(cbrennan) min check version is an optimization to save compute on deleting metadata, but at some point this
-        //  should be something other than the default of 1.
-        vacuumFullRequest.setMinCheckVersion(1L);
-        vacuumFullRequest.setMaxCheckVersion(visibleVersion);
+        vacuumFullRequest.setTabletIds(new ArrayList<>(allTabletIds));
         vacuumFullRequest.setMinActiveTxnId(minActiveTxnId);
+
+        long graceTimestamp = startTime / MILLISECONDS_PER_SECOND - Config.lake_fullvacuum_meta_expired_seconds;
+        graceTimestamp = Math.min(graceTimestamp,
+                                  Math.max(clusterSnapshotMgr.getSafeDeletionTimeMs() / MILLISECONDS_PER_SECOND, 1));
+        vacuumFullRequest.setGraceTimestamp(graceTimestamp);
+
+        List<Long> retainVersions = new ArrayList<>();
+        // always should be inited by current visibleVersion
+        retainVersions.addAll(clusterSnapshotMgr.getVacuumRetainVersions(
+                              db.getId(), table.getId(), partition.getParentId(), partition.getId()));
+        long minCheckVersion = 0;
+        long maxCheckVersion = visibleVersion - 1; // no need to check visibleVersion
+        vacuumFullRequest.setMinCheckVersion(minCheckVersion);
+        vacuumFullRequest.setMaxCheckVersion(maxCheckVersion);
+        vacuumFullRequest.setRetainVersions(retainVersions);
 
         ComputeNode chosenNode = selectNodeWithMinVacuum(involvedNodes);
         if (chosenNode == null) {
@@ -274,9 +308,5 @@ public class FullVacuumDaemon extends FrontendDaemon implements Writable {
         long a = GlobalStateMgr.getCurrentState().getGlobalTransactionMgr().getMinActiveTxnIdOfDatabase(db.getId());
         Optional<Long> b = GlobalStateMgr.getCurrentState().getSchemaChangeHandler().getActiveTxnIdOfTable(table.getId());
         return Math.min(a, b.orElse(Long.MAX_VALUE));
-    }
-
-    public void testVacuumPartitionImpl(Database db, OlapTable table, PhysicalPartition partition) {
-        vacuumPartitionImpl(db, table, partition);
     }
 }
