@@ -249,14 +249,31 @@ static inline void binary_column_non_empty_op(uint8_t* begin, uint8_t* end, Byte
     (*offsets)[i + 1] = bytes->size();
 }
 
+template <typename OffsetValue>
+static inline void binary_column_empty_op_fast(Bytes* bytes, OffsetValue* offsets, size_t i) {
+    offsets[i + 1] = static_cast<OffsetValue>(bytes->size());
+}
+
+template <typename OffsetValue>
+static inline void binary_column_non_empty_op_fast(uint8_t* begin, uint8_t* end, Bytes* bytes, OffsetValue* offsets,
+                                                   size_t i) {
+    bytes->insert(bytes->end(), begin, end);
+    offsets[i + 1] = static_cast<OffsetValue>(bytes->size());
+}
+
 template <bool off_is_negative, bool allow_out_of_left_bound>
 static inline void ascii_substr(const BinaryColumn* src, Bytes* bytes, Offsets* offsets, int off, int len) {
     const auto size = src->size();
-    size_t i = 0;
-    for (; i < size; ++i) {
-        auto s = src->get_slice(i);
-        ascii_substr_per_slice<off_is_negative, allow_out_of_left_bound>(&s, off, len, binary_column_empty_op,
-                                                                         binary_column_non_empty_op, bytes, offsets, i);
+    const char* src_base = src->get_string_begin();
+    const auto* __restrict src_offset_data = src->get_offset().data();
+    auto* __restrict dst_offset_data = offsets->data();
+    for (size_t i = 0; i < size; ++i) {
+        const uint32_t begin = src_offset_data[i];
+        const uint32_t end = src_offset_data[i + 1];
+        Slice s(src_base + begin, end - begin);
+        ascii_substr_per_slice<off_is_negative, allow_out_of_left_bound>(
+                &s, off, len, binary_column_empty_op_fast<uint32_t>, binary_column_non_empty_op_fast<uint32_t>, bytes,
+                dst_offset_data, i);
     }
 }
 
